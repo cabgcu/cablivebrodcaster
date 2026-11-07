@@ -5,75 +5,127 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black">
-<title>Canyon Night — Soundboard</title>
-<link rel="stylesheet" href="/style.css">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#09090b">
+<title>Soundboard · Canyon Night</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap">
+<link rel="stylesheet" href="style.css">
 <style>
-  main { padding: 12px; display: grid; gap: 12px; }
-  .top { display: grid; grid-template-columns: 1fr auto auto; gap: 12px; align-items: center; }
-  .master { display: flex; align-items: center; gap: 12px; color: var(--dim); font-size: 14px; }
-  .master input { max-width: 420px; }
-  #stopAll { background: #5a1410; border-color: #a3261d; font-weight: 800; font-size: 18px; padding: 16px 22px; }
-  #fadeAll { font-weight: 700; padding: 16px 18px; }
-  .pads { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 12px; }
-  .pad {
-    position: relative; aspect-ratio: 1.25; border-radius: 18px; padding: 14px; overflow: hidden;
-    background: var(--c, #2b2622); border: 2px solid #ffffff14; color: #fff;
-    display: flex; flex-direction: column; justify-content: flex-end; text-align: left;
-    font-weight: 700; font-size: 19px; line-height: 1.15; cursor: pointer;
-    box-shadow: inset 0 -40px 60px #0005; touch-action: manipulation;
-  }
-  .pad .key { position: absolute; top: 10px; left: 12px; font-size: 12px; opacity: .6; font-weight: 600; }
-  .pad .meta { position: absolute; top: 10px; right: 12px; font-size: 12px; opacity: .8; font-weight: 600; }
-  .pad .prog { position: absolute; left: 0; bottom: 0; height: 6px; background: #fff; width: 0; }
-  .pad.playing { border-color: #fff; box-shadow: 0 0 0 3px #fff3, 0 0 28px var(--c, #fff6); animation: pulse 1s ease-in-out infinite alternate; }
-  @keyframes pulse { from { filter: brightness(1.05); } to { filter: brightness(1.35); } }
+  main { padding: 20px; display: grid; gap: 18px; }
+  .toolbar { display: flex; align-items: center; gap: 12px; padding: 12px 12px 12px 18px; flex-wrap: wrap; }
+  .master { display: flex; align-items: center; gap: 14px; flex: 1; min-width: 240px; color: var(--text-2); }
+  .master .label { font-size: 13px; font-weight: 600; }
+  .master input { max-width: 380px; }
+  .master .val { font-size: 13px; font-weight: 700; color: var(--text); min-width: 40px; }
+  .toolbar .btn-solid-danger { padding: 0 22px; }
+
+  .pads { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 14px; }
+  .pad { --c: #52525b; position: relative; aspect-ratio: 4 / 3; border-radius: 18px; overflow: hidden; cursor: pointer;
+    display: flex; flex-direction: column; justify-content: flex-end; padding: 16px; color: #fff; text-align: left;
+    background: linear-gradient(155deg, color-mix(in oklab, var(--c) 88%, white 12%), color-mix(in oklab, var(--c) 72%, black 28%));
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.18), 0 10px 24px -14px color-mix(in oklab, var(--c) 70%, black);
+    transition: transform .08s, box-shadow .2s, filter .2s; touch-action: manipulation; border: 0; font: inherit; }
   .pad:active { transform: scale(.97); }
-  .editor { display: none; position: absolute; inset: 0; background: #000d; padding: 10px; flex-direction: column; gap: 6px;
-    font-size: 13px; font-weight: 500; justify-content: center; }
-  .editing .editor { display: flex; }
-  .editor .row { display: flex; gap: 6px; align-items: center; }
-  .editor input[type=range] { height: 24px; }
-  .swatches { display: flex; gap: 4px; flex-wrap: wrap; }
-  .swatches span { width: 20px; height: 20px; border-radius: 50%; border: 2px solid #fff3; }
-  .editor button { padding: 6px 8px; font-size: 13px; border-radius: 8px; }
-  .mode { font-size: 13px; color: var(--dim); }
+  .pad .label { font-size: 18px; font-weight: 700; letter-spacing: -0.015em; line-height: 1.2; text-shadow: 0 1px 2px rgba(0,0,0,.25);
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .pad .top { position: absolute; top: 12px; left: 12px; right: 12px; display: flex; align-items: center; gap: 6px; }
+  .pad .key { height: 22px; min-width: 22px; padding: 0 6px; border-radius: 6px; display: grid; place-items: center;
+    font-size: 11.5px; font-weight: 700; background: rgba(0,0,0,.22); }
+  .pad .flag { margin-left: auto; opacity: .85; }
+  .pad .flag svg { width: 16px; height: 16px; }
+  .pad .prog { position: absolute; left: 0; bottom: 0; height: 4px; width: 0; background: #fff; }
+  .pad .eq { display: none; gap: 2px; align-items: flex-end; height: 14px; }
+  .pad .eq span { width: 3px; background: #fff; border-radius: 1px; animation: eq .8s ease-in-out infinite alternate; }
+  .pad .eq span:nth-child(2) { animation-delay: -.3s; } .pad .eq span:nth-child(3) { animation-delay: -.6s; }
+  @keyframes eq { from { height: 3px; } to { height: 14px; } }
+  .pad.playing { box-shadow: 0 0 0 3px #fff, 0 0 34px -4px var(--c); filter: brightness(1.12); }
+  .pad.playing .eq { display: flex; }
+  .pad.playing .key { display: none; }
+  .editing .pad::after { content: ""; position: absolute; inset: 0; border-radius: inherit; border: 2px dashed rgba(255,255,255,.5); }
+  .editing .pad .top .flag { display: none; }
+  .edit-chip { display: none; position: absolute; top: 10px; right: 10px; width: 30px; height: 30px; border-radius: 50%;
+    background: rgba(0,0,0,.35); place-items: center; }
+  .edit-chip svg { width: 15px; height: 15px; }
+  .editing .edit-chip { display: grid; }
+
+  dialog { border: 1px solid var(--border-strong); background: var(--surface); color: var(--text); border-radius: 22px;
+    padding: 0; width: min(420px, calc(100vw - 32px)); box-shadow: 0 30px 80px -20px rgba(0,0,0,.8); }
+  dialog::backdrop { background: rgba(0,0,0,.6); backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px); }
+  .sheet { display: grid; gap: 18px; padding: 20px; }
+  .sheet h3 { margin: 0; font-size: 18px; font-weight: 700; letter-spacing: -0.01em; }
+  .sheet .row { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 12px; color: var(--text-2); }
+  .swatches { display: flex; gap: 10px; flex-wrap: wrap; }
+  .swatches button { width: 34px; height: 34px; border-radius: 50%; border: 0; cursor: pointer; box-shadow: inset 0 0 0 1px rgba(255,255,255,.15); }
+  .swatches button.on { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px #fff; }
+  .sheet .actions { display: flex; gap: 10px; }
+  .sheet .actions .btn { flex: 1; }
+  #upStatus { font-size: 13px; color: var(--text-3); }
 </style>
 </head>
 <body>
-<header class="bar">
-  <h1>CANYON NIGHT · SOUNDBOARD</h1>
-  <span id="conn" class="chip bad">Connecting…</span>
-  <span id="scr" class="chip bad">Screen</span>
-  <span class="grow"></span>
-  <button id="uploadBtn">＋ Add sounds</button>
-  <button id="editBtn">Edit pads</button>
+<header class="app-header">
+  <a class="brand" href="index.html" title="Start page">
+    <span class="brand-mark"><i data-icon="logo"></i></span>
+    <span class="brand-text"><b>Canyon Night</b><span>Soundboard</span></span>
+  </a>
+  <div class="header-status">
+    <span id="conn" class="pill">Connecting</span>
+    <span id="scr" class="pill keep">Screen</span>
+  </div>
+  <span class="spacer"></span>
+  <button class="btn" id="editBtn"><i data-icon="edit"></i><span>Edit</span></button>
+  <button class="btn btn-primary" id="uploadBtn"><i data-icon="plus"></i>Add sounds</button>
   <input type="file" id="file" multiple accept="audio/*" hidden>
 </header>
+<div id="warn" class="banner"><i data-icon="alert"></i><span></span></div>
+
 <main>
-  <div class="top">
-    <div class="master">Master <input type="range" id="master" min="0" max="1" step="0.01"> <span id="mVal"></span></div>
-    <button id="fadeAll">Fade out all</button>
-    <button id="stopAll">■ STOP ALL</button>
-  </div>
-  <div class="mode">Tap a pad to play it on the laptop speakers. Tap again to stop. <span id="upStatus"></span></div>
+  <section class="card toolbar">
+    <div class="master">
+      <i data-icon="volume"></i><span class="label">Master</span>
+      <input type="range" id="master" min="0" max="1" step="0.01" value="0.9">
+      <span class="val tnum" id="mVal">90%</span>
+    </div>
+    <span id="upStatus"></span>
+    <button class="btn btn-lg" id="fadeAll"><i data-icon="fade"></i>Fade out</button>
+    <button class="btn btn-lg btn-solid-danger" id="stopAll"><i data-icon="stop"></i>Stop all</button>
+  </section>
   <div class="pads" id="pads"></div>
 </main>
 
-<script type="module">
-import { connect, summarize, loadLibrary, updateSettings, uploadFiles, removeFile, DEFAULT_STATE, $, el, wakeLock } from './common.js';
+<dialog id="sheet">
+  <form method="dialog" class="sheet">
+    <div style="display:flex;align-items:center;gap:10px">
+      <h3 id="sName">Sound</h3><span class="spacer"></span>
+      <button class="btn btn-ghost btn-icon" value="close" title="Close"><i data-icon="x"></i></button>
+    </div>
+    <div class="row"><i data-icon="volume"></i><input type="range" id="sVol" min="0" max="1.5" step="0.01"><span class="tnum" id="sVolVal"></span></div>
+    <label class="switch"><input type="checkbox" id="sLoop">Loop until stopped</label>
+    <div class="field">Color<div class="swatches" id="sColors"></div></div>
+    <div class="actions">
+      <button class="btn" type="button" id="sTest"><i data-icon="play"></i>Test</button>
+      <button class="btn btn-danger" type="button" id="sDel"><i data-icon="trash"></i>Delete</button>
+    </div>
+  </form>
+</dialog>
 
-const COLORS = ['#2b2622', '#b23a2e', '#c2611f', '#b38a12', '#3b8f3e', '#1f7a7a', '#2d5fb3', '#6b3fb3', '#a8327a'];
-const DEFAULT_COLORS = ['#b23a2e', '#c2611f', '#b38a12', '#3b8f3e', '#1f7a7a', '#2d5fb3', '#6b3fb3', '#a8327a'];
+<script type="module">
+import { connect, summarize, loadLibrary, updateSettings, uploadFiles, removeFile, DEFAULT_STATE,
+  $, el, icon, setRange, wakeLock } from './common.js';
+
+const COLORS = ['#e5484d', '#f76b15', '#d6a10b', '#30a46c', '#12a594', '#0090ff', '#3e63dd', '#8e4ec6', '#d6409f', '#52525b'];
 let library = { show: [], sounds: [] };
 let state = DEFAULT_STATE;
 let room = summarize([]);
 let editing = false;
 let playing = new Map();
+let current = null; // sound being edited
 
 const link = connect('sound', {
   onStatus: (up) => {
-    $('#conn').className = 'chip ' + (up ? 'ok' : 'bad'); $('#conn').textContent = up ? 'Online' : 'Offline';
+    $('#conn').className = 'pill ' + (up ? 'ok' : 'bad'); $('#conn').textContent = up ? 'Online' : 'Offline';
     if (up) link.send({ t: 'getstate' });
   },
   onMessage: (m) => {
@@ -95,54 +147,51 @@ async function refreshLibrary() {
   renderPads();
 }
 
-// Save a pad setting for everyone (volume / loop / color).
 async function setPad(name, patch) {
   const s = library.sounds.find((x) => x.name === name);
   if (s) Object.assign(s, patch);
-  await updateSettings(link, (st) => { st.pads ||= {}; st.pads[name] = { ...(st.pads[name] || {}), ...patch }; });
   renderPads();
+  await updateSettings(link, (st) => { st.pads ||= {}; st.pads[name] = { ...(st.pads[name] || {}), ...patch }; });
 }
 
 function renderState() {
   const scr = $('#scr');
-  if (!room.screens) { scr.className = 'chip bad'; scr.textContent = 'Screen offline — no audio'; }
-  else if (!room.screenReady) { scr.className = 'chip warn'; scr.textContent = 'Click the laptop screen to enable audio'; }
-  else { scr.className = 'chip ok'; scr.textContent = 'Laptop audio ready'; }
-  if (document.activeElement !== $('#master')) $('#master').value = state.master;
+  const warn = $('#warn');
+  if (!room.screens) {
+    scr.className = 'pill bad keep'; scr.textContent = 'Screen offline';
+    warn.className = 'banner show bad'; warn.querySelector('span').textContent = 'The audience screen isn’t open, so sounds have nowhere to play. Open it on the laptop.';
+  } else if (!room.screenReady) {
+    scr.className = 'pill warn keep'; scr.textContent = 'Audio off';
+    warn.className = 'banner show'; warn.querySelector('span').textContent = 'Click once on the laptop’s audience screen to turn on sound.';
+  } else {
+    scr.className = 'pill ok keep'; scr.textContent = 'Laptop audio ready'; warn.className = 'banner';
+  }
+  if (document.activeElement !== $('#master')) setRange($('#master'), state.master);
   $('#mVal').textContent = Math.round(state.master * 100) + '%';
 }
+
+const colorFor = (s, i) => s.color || COLORS[i % (COLORS.length - 1)];
 
 function renderPads() {
   const box = $('#pads');
   box.replaceChildren();
   box.classList.toggle('editing', editing);
   if (!library.sounds.length) {
-    box.append(el('div', { class: 'empty', style: 'grid-column:1/-1' },
-      'No sounds yet. Tap “Add sounds” (MP3, WAV, M4A).'));
+    box.append(el('div', { class: 'empty', style: 'grid-column:1/-1' }, icon('music'),
+      el('b', {}, 'No sounds yet'), el('span', {}, 'Tap “Add sounds” to upload MP3, WAV or M4A files.')));
     return;
   }
   library.sounds.forEach((s, i) => {
-    const color = s.color || DEFAULT_COLORS[i % DEFAULT_COLORS.length];
-    const pad = el('div', { class: 'pad', style: `--c:${color}`, 'data-name': s.name,
-      onpointerdown: (e) => {
-        if (editing || e.target.closest('.editor')) return;
-        link.cmd('sfx', { op: 'toggle', name: s.name });
-      } },
-      el('span', { class: 'key' }, i < 9 ? String(i + 1) : ''),
-      el('span', { class: 'meta' }, s.loop ? '↻ loop' : ''),
-      s.label,
-      el('div', { class: 'prog' }),
-      el('div', { class: 'editor' },
-        el('div', { class: 'row' }, 'Vol', el('input', { type: 'range', min: 0, max: 1.5, step: 0.01, value: s.vol,
-          onchange: (e) => setPad(s.name, { vol: Number(e.target.value) }) })),
-        el('label', { class: 'chk' }, el('input', { type: 'checkbox', checked: !!s.loop,
-          onchange: (e) => setPad(s.name, { loop: e.target.checked }) }), 'Loop'),
-        el('div', { class: 'swatches' }, COLORS.map((c) => el('span', { style: `background:${c}`,
-          onclick: () => setPad(s.name, { color: c }) }))),
-        el('div', { class: 'row' },
-          el('button', { onclick: () => link.cmd('sfx', { op: 'play', name: s.name }) }, '▶ Test'),
-          el('button', { class: 'danger', onclick: () => del(s) }, '🗑'))));
-    box.append(pad);
+    box.append(el('button', { class: 'pad', style: `--c:${colorFor(s, i)}`, 'data-name': s.name,
+      onpointerdown: (e) => { if (!editing) { e.preventDefault(); link.cmd('sfx', { op: 'toggle', name: s.name }); } },
+      onclick: () => { if (editing) openSheet(s, i); } },
+      el('div', { class: 'top' },
+        el('span', { class: 'key tnum' }, i < 9 ? String(i + 1) : '•'),
+        el('span', { class: 'eq' }, el('span'), el('span'), el('span')),
+        s.loop ? el('span', { class: 'flag', title: 'Loops' }, icon('repeat')) : null),
+      el('span', { class: 'edit-chip' }, icon('edit')),
+      el('span', { class: 'label' }, s.label),
+      el('div', { class: 'prog' })));
   });
   renderPlaying();
 }
@@ -155,6 +204,30 @@ function renderPlaying() {
   });
 }
 
+// ---------- pad settings sheet ----------
+function openSheet(s, i) {
+  current = s;
+  $('#sName').textContent = s.label;
+  setRange($('#sVol'), s.vol);
+  $('#sVolVal').textContent = Math.round(s.vol * 100) + '%';
+  $('#sLoop').checked = !!s.loop;
+  const col = colorFor(s, i);
+  $('#sColors').replaceChildren(...COLORS.map((c) => el('button', { type: 'button', class: c === col ? 'on' : '', style: `background:${c}`,
+    onclick: (e) => { $('#sColors').querySelectorAll('button').forEach((b) => b.classList.remove('on')); e.currentTarget.classList.add('on'); setPad(s.name, { color: c }); } })));
+  $('#sheet').showModal();
+}
+$('#sVol').addEventListener('input', (e) => { $('#sVolVal').textContent = Math.round(e.target.value * 100) + '%'; });
+$('#sVol').addEventListener('change', (e) => current && setPad(current.name, { vol: Number(e.target.value) }));
+$('#sLoop').addEventListener('change', (e) => current && setPad(current.name, { loop: e.target.checked }));
+$('#sTest').onclick = () => current && link.cmd('sfx', { op: 'play', name: current.name });
+$('#sDel').onclick = async () => {
+  if (!current || !confirm(`Delete sound “${current.label}”?`)) return;
+  $('#sheet').close();
+  await removeFile(link, 'sounds', current.name);
+  refreshLibrary();
+};
+
+// ---------- toolbar ----------
 $('#master').addEventListener('input', (e) => {
   $('#mVal').textContent = Math.round(e.target.value * 100) + '%';
   link.cmd('master', { value: Number(e.target.value) });
@@ -169,21 +242,19 @@ $('#file').onchange = async (e) => {
 };
 $('#editBtn').onclick = () => {
   editing = !editing;
-  $('#editBtn').classList.toggle('on', editing);
-  $('#editBtn').textContent = editing ? 'Done' : 'Edit pads';
+  $('#editBtn').classList.toggle('active', editing);
+  $('#editBtn').replaceChildren(icon(editing ? 'check' : 'edit'), el('span', {}, editing ? 'Done' : 'Edit'));
   renderPads();
 };
-async function del(s) {
-  if (!confirm(`Delete sound “${s.label}”?`)) return;
-  await removeFile(link, 'sounds', s.name);
-  refreshLibrary();
-}
+
 // Keyboard: 1-9 trigger pads, Esc stops all (handy with a Bluetooth keyboard)
 addEventListener('keydown', (e) => {
+  if ($('#sheet').open) return;
   if (e.key === 'Escape') return link.cmd('sfx', { op: 'stopAll' });
   const n = Number(e.key);
   if (n >= 1 && n <= 9 && library.sounds[n - 1]) link.cmd('sfx', { op: 'toggle', name: library.sounds[n - 1].name });
 });
+
 wakeLock();
 refreshLibrary();
 renderState();

@@ -5,110 +5,191 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black">
-<title>Canyon Night — Show Control</title>
-<link rel="stylesheet" href="/style.css">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#09090b">
+<title>Show Control · Canyon Night</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap">
+<link rel="stylesheet" href="style.css">
 <style>
-  main { display: grid; gap: 12px; padding: 12px; grid-template-columns: minmax(300px, 380px) 1fr; align-items: start; }
-  @media (max-width: 900px) { main { grid-template-columns: 1fr; } }
-  .left { display: grid; gap: 12px; position: sticky; top: 70px; }
-  @media (max-width: 900px) { .left { position: static; } }
-  .liveName { font-weight: 700; font-size: 18px; margin-top: 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .liveName.black { color: var(--dim); }
-  .bigbtns { display: grid; grid-template-columns: 1fr 1.6fr; gap: 10px; }
-  .bigbtns button { font-size: 22px; font-weight: 700; padding: 22px 10px; border-radius: 16px; }
-  #next { background: #1f3d24; border-color: #2f6b38; }
-  #blackBtn { grid-column: 1 / -1; padding: 14px; font-size: 16px; }
-  .transport { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
-  .transport button { padding: 14px 4px; font-size: 18px; }
-  .scrub { display: flex; align-items: center; gap: 10px; margin: 10px 0 4px; font-variant-numeric: tabular-nums; font-size: 14px; }
-  .opts { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 10px; }
-  .vol { display: flex; align-items: center; gap: 10px; margin-top: 6px; font-size: 14px; color: var(--dim); }
-  .right { display: grid; gap: 12px; }
-  .cams { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 10px; }
+  .layout { display: grid; grid-template-columns: 400px minmax(0, 1fr); gap: 20px; padding: 20px; align-items: start; }
+  .rail { position: sticky; top: 77px; display: grid; gap: 14px; max-height: calc(100dvh - 97px); overflow-y: auto;
+    scrollbar-width: none; padding: 2px; margin: -2px; }
+  .rail::-webkit-scrollbar { display: none; }
+  .content { display: grid; gap: 20px; min-width: 0; }
+  @media (max-width: 1000px) {
+    .layout { grid-template-columns: minmax(0, 1fr); padding: 14px; gap: 14px; }
+    .rail { position: static; max-height: none; overflow: visible; grid-template-columns: 1fr 1fr; }
+    .rail > .program { grid-row: span 2; }
+    .rail > .video-card { grid-column: 1 / -1; }
+  }
+  @media (max-width: 640px) { .rail { grid-template-columns: 1fr; } .rail > .program { grid-row: auto; } }
+
+  /* program monitor */
+  .program { padding: 12px; }
+  .program .tile { border-radius: 12px; outline: none; box-shadow: 0 0 0 2px var(--live), 0 0 32px -6px rgba(255,59,59,.55); }
+  .program .tile.is-black { box-shadow: 0 0 0 1px var(--border-strong); }
+  .program .tile .placeholder { position: absolute; inset: 0; display: grid; place-items: center; color: var(--text-3); font-size: 13px; font-weight: 600; }
+  .program-meta { display: flex; align-items: center; gap: 10px; padding: 10px 4px 0; }
+  .program-meta .kind { width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; background: var(--surface-2); color: var(--text-2); flex: none; }
+  .program-meta .txt { min-width: 0; }
+  .program-meta .title { font-size: 16px; font-weight: 700; letter-spacing: -0.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .program-meta .sub { font-size: 12.5px; color: var(--text-3); font-weight: 500; }
+
+  .upnext { display: flex; align-items: center; gap: 12px; padding: 10px; }
+  .upnext .tile { width: 96px; flex: none; border-radius: 8px; }
+  .upnext .txt { min-width: 0; }
+  .upnext .title { font-weight: 600; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  .drive { display: grid; grid-template-columns: 1fr 0.8fr 1.5fr; gap: 10px; }
+  .drive .btn-xl { --h: 66px; padding: 0 10px; }
+  .drive .btn-xl svg { width: 24px; height: 24px; stroke-width: 2.4; }
+  .drive .black { font-size: 15px; flex-direction: column; gap: 4px; }
+  .drive .black svg { width: 18px; height: 18px; }
+
+  /* video */
+  .video-card { padding: 14px 16px; }
+  .video-card.off .video-body { display: none; }
+  .video-card .vtitle { font-weight: 600; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .scrub { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 12px; margin: 10px 0 6px;
+    font-size: 12.5px; font-weight: 600; color: var(--text-2); }
+  .transport { display: flex; align-items: center; justify-content: center; gap: 10px; margin: 2px 0 4px; }
+  .transport .play { --h: 60px; width: 60px; border-radius: 50%; background: #fff; color: #000; border: 0; }
+  .transport .play svg { width: 26px; height: 26px; }
+  .transport .skip { position: relative; }
+  .transport .skip small { position: absolute; font-size: 8.5px; font-weight: 800; top: 50%; left: 50%; transform: translate(-50%, -38%); }
+  .vol { display: grid; grid-template-columns: auto 1fr; gap: 12px; align-items: center; color: var(--text-2); }
+  .toggles { display: flex; flex-wrap: wrap; gap: 10px 16px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border); }
+
+  /* cameras */
+  .cams { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(200px, 240px); gap: 14px; overflow-x: auto; padding: 4px; margin: -4px; scrollbar-width: thin; }
   .cam { cursor: pointer; }
-  .cam .thumb { display: grid; place-items: center; color: var(--dim); font-size: 13px; }
-  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
-  .item { cursor: pointer; position: relative; }
-  .item .num { position: absolute; bottom: 6px; left: 6px; font-size: 11px; background: #000b; padding: 1px 6px; border-radius: 5px; }
-  .edit { display: none; gap: 4px; margin-top: 4px; }
-  .editing .edit { display: flex; }
-  .edit button { flex: 1; padding: 6px 0; font-size: 14px; border-radius: 8px; }
-  .tools { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
-  #warn { display: none; background: #3a2c08; border: 1px solid #6b5a12; color: #fff3c4; padding: 10px 14px; border-radius: 12px; margin: 12px 12px 0; }
-  #warn.show { display: block; }
+  .cam .tile .placeholder { position: absolute; inset: 0; display: grid; place-items: center; color: var(--text-3); font-size: 13px; }
+  .cam-meta { display: flex; align-items: center; gap: 8px; margin-top: 8px; font-size: 14px; font-weight: 600; }
+  .cam-meta svg { color: var(--text-3); }
+  .cam-meta .hint { margin-left: auto; font-size: 12px; color: var(--text-3); font-weight: 500; }
+  .cam:has(.tile.live) .hint { color: var(--live); }
+
+  /* rundown */
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(176px, 1fr)); gap: 18px 14px; }
+  .item { cursor: pointer; min-width: 0; }
+  .item:active .tile { transform: scale(.98); }
+  .item .tile { transition: transform .08s, outline-color .12s; }
+  .item-meta { display: flex; align-items: center; gap: 8px; margin-top: 8px; min-width: 0; }
+  .item-meta .num { font-size: 11.5px; font-weight: 700; color: var(--text-3); min-width: 18px; }
+  .item-meta .name { font-size: 13.5px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; }
+  .item-meta svg { color: var(--text-3); width: 16px; height: 16px; }
+  .edit-bar { position: absolute; inset: auto 6px 6px 6px; display: none; gap: 6px; z-index: 3; }
+  .editing .edit-bar { display: flex; }
+  .editing .item { cursor: default; }
+  .edit-bar .btn { --h: 34px; flex: 1; padding: 0; background: rgba(20,20,24,.85); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
+  .edit-bar .btn-danger { background: rgba(80,16,16,.85); }
+  #upStatus { font-size: 13px; color: var(--text-3); }
 </style>
 </head>
 <body>
-<header class="bar">
-  <h1>CANYON NIGHT · SHOW</h1>
-  <span id="conn" class="chip bad">Connecting…</span>
-  <span id="scr" class="chip bad">Screen</span>
-  <span class="grow"></span>
-  <span class="muted" style="font-size:13px">Transition</span>
-  <div class="seg" id="trans"><button data-v="cut">Cut</button><button data-v="fade">Fade</button></div>
+<header class="app-header">
+  <a class="brand" href="index.html" title="Start page">
+    <span class="brand-mark"><i data-icon="logo"></i></span>
+    <span class="brand-text"><b>Canyon Night</b><span>Show control</span></span>
+  </a>
+  <div class="header-status">
+    <span id="conn" class="pill">Connecting</span>
+    <span id="scr" class="pill keep">Screen</span>
+  </div>
+  <span class="spacer"></span>
+  <div class="segmented" id="trans" title="Transition">
+    <button data-v="cut">Cut</button><button data-v="fade">Fade</button>
+  </div>
 </header>
-<div id="warn"></div>
+<div id="warn" class="banner"><i data-icon="alert"></i><span></span></div>
 
-<main>
-  <section class="left">
-    <div class="panel">
-      <h2>On screen now</h2>
-      <div class="thumb live" id="liveThumb"><span class="badge live">LIVE</span></div>
-      <div class="liveName" id="liveName">—</div>
+<div class="layout">
+  <aside class="rail">
+    <section class="card program">
+      <div class="tile" id="liveThumb"></div>
+      <div class="program-meta">
+        <span class="kind" id="liveKind"><i data-icon="black"></i></span>
+        <div class="txt">
+          <div class="eyebrow" style="color:var(--live)">On air</div>
+          <div class="title" id="liveName">Black screen</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="card upnext" id="upnext">
+      <div class="tile" id="nextThumb"></div>
+      <div class="txt">
+        <div class="eyebrow" style="color:var(--next)">Up next</div>
+        <div class="title" id="nextName">—</div>
+      </div>
+    </section>
+
+    <div class="drive">
+      <button class="btn btn-xl" id="prev"><i data-icon="prev"></i>Back</button>
+      <button class="btn btn-xl btn-danger black" id="blackBtn" title="Black screen"><i data-icon="black"></i>Black</button>
+      <button class="btn btn-xl btn-go" id="next">Next<i data-icon="next"></i></button>
     </div>
 
-    <div class="bigbtns">
-      <button id="prev">◀ Back</button>
-      <button id="next">Next ▶</button>
-      <button id="blackBtn" class="danger">■ Black screen</button>
-    </div>
+    <section class="card video-card off" id="videoPanel">
+      <div class="section-head" style="margin-bottom:0">
+        <span class="section-title"><i data-icon="film"></i>Video</span>
+        <span class="spacer"></span>
+        <span class="muted" id="vIdle" style="font-size:13px">Nothing playing</span>
+      </div>
+      <div class="video-body">
+        <div class="scrub tnum">
+          <span id="vCur">0:00</span>
+          <input type="range" id="vSeek" min="0" max="1000" value="0" step="1">
+          <span id="vRem">-0:00</span>
+        </div>
+        <div class="transport">
+          <button class="btn btn-ghost btn-icon btn-lg" data-op="restart" title="Restart"><i data-icon="restart"></i></button>
+          <button class="btn btn-ghost btn-icon btn-lg skip" data-op="back" title="Back 10 seconds"><i data-icon="back10"></i><small>10</small></button>
+          <button class="btn btn-icon play" data-op="toggle" id="vPlay" title="Play / pause"><i data-icon="play"></i></button>
+          <button class="btn btn-ghost btn-icon btn-lg skip" data-op="fwd" title="Forward 10 seconds"><i data-icon="fwd10"></i><small>10</small></button>
+          <span style="width:52px" aria-hidden="true"></span>
+        </div>
+      </div>
+      <div class="vol" style="margin-top:8px"><i data-icon="volume"></i><input type="range" id="vVol" min="0" max="1" step="0.01" value="1"></div>
+      <div class="toggles">
+        <label class="switch"><input type="checkbox" id="oAuto">Autoplay</label>
+        <label class="switch"><input type="checkbox" id="oLoop">Loop</label>
+        <label class="switch"><input type="checkbox" id="oNext">Auto-next</label>
+      </div>
+    </section>
+  </aside>
 
-    <div class="panel" id="videoPanel">
-      <h2>Video</h2>
-      <div id="vName" class="muted" style="font-size:14px">No video on screen</div>
-      <div class="scrub">
-        <span id="vCur">0:00</span>
-        <input type="range" id="vSeek" min="0" max="1000" value="0" step="1">
-        <span id="vRem">-0:00</span>
+  <main class="content">
+    <section>
+      <div class="section-head">
+        <span class="section-title"><i data-icon="camera"></i>Cameras</span>
+        <span class="count" id="camCount">0</span>
+        <span class="spacer"></span>
+        <span class="muted" style="font-size:13px">Tap to cut</span>
       </div>
-      <div class="transport">
-        <button data-op="restart" title="Restart">⏮</button>
-        <button data-op="back">−10s</button>
-        <button data-op="toggle" id="vPlay">▶</button>
-        <button data-op="fwd">+10s</button>
-      </div>
-      <div class="vol">🔊 <input type="range" id="vVol" min="0" max="1" step="0.01"></div>
-      <div class="opts">
-        <label class="chk"><input type="checkbox" id="oAuto"> Autoplay</label>
-        <label class="chk"><input type="checkbox" id="oLoop"> Loop</label>
-        <label class="chk"><input type="checkbox" id="oNext"> Next when done</label>
-      </div>
-    </div>
-  </section>
-
-  <section class="right">
-    <div class="panel">
-      <h2>Live cameras — tap to cut</h2>
       <div class="cams" id="cams"></div>
-    </div>
+    </section>
 
-    <div class="panel" id="rundownPanel">
-      <h2 style="display:flex;align-items:center;gap:10px">Rundown — tap any slide or video to put it on screen</h2>
-      <div class="tools" style="margin-bottom:12px">
-        <button id="uploadBtn">＋ Add slides / videos</button>
-        <button id="editBtn">Reorder / delete</button>
-        <span id="upStatus" class="muted" style="font-size:13px"></span>
+    <section>
+      <div class="section-head">
+        <span class="section-title"><i data-icon="layers"></i>Rundown</span>
+        <span class="count" id="showCount">0</span>
+        <span id="upStatus"></span>
+        <span class="spacer"></span>
+        <button class="btn" id="editBtn"><i data-icon="edit"></i><span>Edit</span></button>
+        <button class="btn btn-primary" id="uploadBtn"><i data-icon="plus"></i>Add media</button>
         <input type="file" id="file" multiple accept="image/*,video/*" hidden>
       </div>
       <div class="grid" id="grid"></div>
-    </div>
-  </section>
-</main>
-<div class="toast" id="toast"></div>
+    </section>
+  </main>
+</div>
 
 <script type="module">
-import { connect, CameraViewer, summarize, loadLibrary, updateSettings, uploadFiles, removeFile, DEFAULT_STATE, $, el, fmtTime, wakeLock } from './common.js';
+import { connect, CameraViewer, summarize, loadLibrary, updateSettings, uploadFiles, removeFile, DEFAULT_STATE,
+  $, el, icon, fmtTime, setRange, wakeLock, prettyName } from './common.js';
 
 let library = { show: [], sounds: [] };
 let state = null; // comes from the audience screen
@@ -119,7 +200,7 @@ const camStreams = new Map();
 
 const link = connect('control', {
   onStatus: (up) => {
-    $('#conn').className = 'chip ' + (up ? 'ok' : 'bad');
+    $('#conn').className = 'pill ' + (up ? 'ok' : 'bad');
     $('#conn').textContent = up ? 'Online' : 'Offline';
     if (up) link.send({ t: 'getstate' });
   },
@@ -155,11 +236,10 @@ async function refreshLibrary() {
 const S = () => state || DEFAULT_STATE;
 
 function mediaThumb(item) {
-  if (item.type === 'video') {
-    return el('video', { src: item.url + '#t=0.5', muted: true, playsInline: true, preload: 'metadata' });
-  }
+  if (item.type === 'video') return el('video', { src: item.url + '#t=0.5', muted: true, playsInline: true, preload: 'metadata' });
   return el('img', { src: item.url, loading: 'lazy', alt: '' });
 }
+function camVideo(stream) { return el('video', { srcObject: stream, muted: true, autoplay: true, playsInline: true }); }
 
 function nextIndex() {
   const p = S().program;
@@ -171,81 +251,100 @@ function renderGrid() {
   const grid = $('#grid');
   grid.replaceChildren();
   grid.classList.toggle('editing', editing);
+  $('#showCount').textContent = library.show.length;
   if (!library.show.length) {
-    grid.append(el('div', { class: 'empty', style: 'grid-column:1/-1' },
-      'No slides yet. Tap “Add slides / videos”. ',
-      'Tip: export your PowerPoint/Keynote/Canva deck as images (PNG/JPG).'));
+    grid.append(el('div', { class: 'empty', style: 'grid-column:1/-1' }, icon('image'),
+      el('b', {}, 'No slides or videos yet'),
+      el('span', {}, 'Tap “Add media”. Export your PowerPoint, Keynote or Canva deck as PNG or JPG images.')));
     return;
   }
   library.show.forEach((item, i) => {
-    const t = el('div', { class: 'thumb' }, mediaThumb(item),
-      el('span', { class: 'num' }, String(i + 1)),
-      item.type === 'video' ? el('span', { class: 'badge r' }, '▶ VIDEO') : null);
-    const card = el('div', { class: 'item', 'data-i': i,
-      onclick: (e) => { if (!editing && !e.target.closest('.edit')) link.cmd('take', { index: i }); } },
-      t, el('div', { class: 'caption' }, item.name),
-      el('div', { class: 'edit' },
-        el('button', { onclick: () => move(i, -1) }, '◀'),
-        el('button', { onclick: () => move(i, 1) }, '▶'),
-        el('button', { class: 'danger', onclick: () => del(item) }, '🗑')));
-    grid.append(card);
+    const tile = el('div', { class: 'tile' }, mediaThumb(item),
+      el('div', { class: 'edit-bar' },
+        el('button', { class: 'btn btn-icon', title: 'Move earlier', onclick: () => move(i, -1) }, icon('prev')),
+        el('button', { class: 'btn btn-icon', title: 'Move later', onclick: () => move(i, 1) }, icon('next')),
+        el('button', { class: 'btn btn-icon btn-danger', title: 'Delete', onclick: () => del(item) }, icon('trash'))));
+    grid.append(el('div', { class: 'item', 'data-i': i,
+      onclick: (e) => { if (!editing && !e.target.closest('.edit-bar')) link.cmd('take', { index: i }); } },
+      tile,
+      el('div', { class: 'item-meta' },
+        el('span', { class: 'num tnum' }, String(i + 1).padStart(2, '0')),
+        el('span', { class: 'name', title: item.name }, prettyName(item.name)),
+        icon(item.type === 'video' ? 'film' : 'image'))));
   });
   render();
+}
+
+function setThumb(box, key, make) {
+  if (box.dataset.key === key) return;
+  box.dataset.key = key;
+  box.replaceChildren();
+  const m = make();
+  if (m) box.append(m);
 }
 
 function render() {
   const st = S();
   const p = st.program;
   const ni = nextIndex();
+
+  // Rundown highlights
   document.querySelectorAll('#grid .item').forEach((card) => {
     const i = Number(card.dataset.i);
-    const t = card.querySelector('.thumb');
+    const t = card.querySelector('.tile');
     const live = p.kind === 'show' && p.index === i;
     const next = !live && i === ni;
     t.classList.toggle('live', live);
     t.classList.toggle('next', next);
-    t.querySelector('.badge.live, .badge.next')?.remove();
-    if (live) t.append(el('span', { class: 'badge live' }, 'LIVE'));
-    else if (next) t.append(el('span', { class: 'badge next' }, 'NEXT'));
+    t.querySelector('.tag')?.remove();
+    if (live) t.append(el('span', { class: 'tag live' }, 'LIVE'));
+    else if (next) t.append(el('span', { class: 'tag next' }, 'NEXT'));
   });
 
-  // Live preview
+  // On air
   const lt = $('#liveThumb');
-  const name = $('#liveName');
-  const liveKey = p.kind === 'show' ? 'show:' + p.name + library.show.length : p.kind === 'camera' ? 'cam:' + p.id + ':' + camStreams.has(p.id) : 'black';
-  if (lt.dataset.key !== liveKey) {
-    lt.dataset.key = liveKey;
-    lt.querySelectorAll('img,video').forEach((x) => x.remove());
-    if (p.kind === 'show' && library.show[p.index]) lt.prepend(mediaThumb(library.show[p.index]));
-    else if (p.kind === 'camera' && camStreams.get(p.id)) {
-      lt.prepend(el('video', { srcObject: camStreams.get(p.id), muted: true, autoplay: true, playsInline: true }));
-    }
-  }
-  name.classList.remove('black');
-  if (p.kind === 'show' && library.show[p.index]) name.textContent = `${p.index + 1}. ${library.show[p.index].name}`;
-  else if (p.kind === 'camera') name.textContent = '🎥 ' + (room.cameras.find((c) => c.id === p.id)?.name || 'Camera');
-  else { name.textContent = 'Black screen'; name.classList.add('black'); }
+  const liveItem = p.kind === 'show' ? library.show[p.index] : null;
+  const camStream = p.kind === 'camera' ? camStreams.get(p.id) : null;
+  const liveKey = liveItem ? 'show:' + liveItem.url : p.kind === 'camera' ? 'cam:' + p.id + ':' + !!camStream : 'black';
+  setThumb(lt, liveKey, () => liveItem ? mediaThumb(liveItem) : camStream ? camVideo(camStream)
+    : el('div', { class: 'placeholder' }, p.kind === 'camera' ? 'Connecting camera…' : 'Black'));
+  lt.classList.toggle('is-black', p.kind === 'black');
+  if (!lt.querySelector('.tag.live') && p.kind !== 'black') lt.append(el('span', { class: 'tag live' }, 'LIVE'));
+  if (p.kind === 'black') lt.querySelector('.tag')?.remove();
+  const kind = $('#liveKind');
+  kind.replaceChildren(icon(liveItem ? (liveItem.type === 'video' ? 'film' : 'image') : p.kind === 'camera' ? 'camera' : 'black'));
+  $('#liveName').textContent = liveItem ? prettyName(liveItem.name)
+    : p.kind === 'camera' ? (room.cameras.find((c) => c.id === p.id)?.name || 'Camera') : 'Black screen';
 
+  // Up next
+  const nextItem = library.show[ni];
+  const isLast = p.kind === 'show' && p.index === library.show.length - 1;
+  setThumb($('#nextThumb'), nextItem && !isLast ? 'n:' + nextItem.url : 'none', () => nextItem && !isLast ? mediaThumb(nextItem) : null);
+  $('#nextName').textContent = !library.show.length ? 'Nothing in rundown' : isLast ? 'End of rundown' : prettyName(nextItem.name);
+  $('#next').disabled = isLast || !library.show.length;
+
+  // Options
   document.querySelectorAll('#trans button').forEach((b) => b.classList.toggle('on', b.dataset.v === st.transition));
   $('#oAuto').checked = st.video.autoplay;
   $('#oLoop').checked = st.video.loop;
   $('#oNext').checked = st.video.autoNext;
-  if (document.activeElement !== $('#vVol')) $('#vVol').value = st.video.volume;
+  if (document.activeElement !== $('#vVol')) setRange($('#vVol'), st.video.volume);
 
   // Screen status
   const scr = $('#scr');
   const warn = $('#warn');
+  const say = (text, bad) => { warn.className = 'banner show' + (bad ? ' bad' : ''); warn.querySelector('span').textContent = text; };
   if (!room.screens) {
-    scr.className = 'chip bad'; scr.textContent = 'Screen offline';
-    warn.className = 'show'; warn.textContent = 'The audience screen isn’t open. On the laptop, open the Audience screen page in Chrome.';
+    scr.className = 'pill bad keep'; scr.textContent = 'Screen offline';
+    say('The audience screen isn’t open. On the laptop, open the Audience screen page in Chrome.', true);
   } else if (!room.screenReady) {
-    scr.className = 'chip warn'; scr.textContent = 'Screen not started';
-    warn.className = 'show'; warn.textContent = 'Audience screen is open but not started — click once on the laptop screen to turn on sound & full screen.';
+    scr.className = 'pill warn keep'; scr.textContent = 'Screen not started';
+    say('The audience screen is open but not started. Click once on the laptop screen to turn on sound and go full screen.');
   } else {
     const [a, b] = (room.cached || '0/0').split('/').map(Number);
-    scr.className = 'chip ' + (a < b ? 'warn' : 'ok');
-    scr.textContent = a < b ? `Screen loading media ${a}/${b}` : 'Screen live';
-    warn.className = '';
+    scr.className = 'pill keep ' + (a < b ? 'warn' : 'ok');
+    scr.textContent = a < b ? `Loading media ${a}/${b}` : 'Screen live';
+    warn.className = 'banner';
   }
   renderCams();
   renderVideo();
@@ -253,28 +352,30 @@ function render() {
 
 function renderCams() {
   const box = $('#cams');
+  $('#camCount').textContent = room.cameras.length;
   const ids = room.cameras.map((c) => c.id + c.name).join() + [...camStreams.keys()].join();
   if (box.dataset.ids !== ids) {
     box.dataset.ids = ids;
     box.replaceChildren();
     if (!room.cameras.length) {
-      box.append(el('div', { class: 'empty', style: 'grid-column:1/-1' },
-        'No cameras connected. On a phone, open the Live camera page (scan the QR code on the start page).'));
+      box.append(el('div', { class: 'empty', style: 'grid-column:1/-1;width:100%' }, icon('phone'),
+        el('b', {}, 'No cameras connected'),
+        el('span', {}, 'On a phone, scan the Live camera code on the start page.')));
     }
     for (const c of room.cameras) {
       const s = camStreams.get(c.id);
-      const t = el('div', { class: 'thumb', 'data-id': c.id },
-        s ? el('video', { srcObject: s, muted: true, autoplay: true, playsInline: true }) : 'connecting…');
       box.append(el('div', { class: 'cam', onclick: () => link.cmd('camera', { id: c.id }) },
-        t, el('div', { class: 'caption' }, '🎥 ' + c.name)));
+        el('div', { class: 'tile', 'data-id': c.id }, s ? camVideo(s) : el('div', { class: 'placeholder' }, 'Connecting…')),
+        el('div', { class: 'cam-meta' }, icon('camera'), c.name, el('span', { class: 'hint' }, 'Cut'))));
     }
   }
   const p = S().program;
-  box.querySelectorAll('.thumb').forEach((t) => {
+  box.querySelectorAll('.tile').forEach((t) => {
     const live = p.kind === 'camera' && p.id === t.dataset.id;
     t.classList.toggle('live', live);
-    t.querySelector('.badge')?.remove();
-    if (live) t.append(el('span', { class: 'badge live' }, 'LIVE'));
+    t.querySelector('.tag')?.remove();
+    if (live) t.append(el('span', { class: 'tag live' }, 'LIVE'));
+    t.parentElement.querySelector('.hint').textContent = live ? 'On air' : 'Cut';
   });
 }
 
@@ -282,12 +383,12 @@ let seeking = false;
 function renderVideo() {
   const v = vstatus;
   const on = !!v.name;
-  $('#videoPanel').style.opacity = on ? 1 : 0.55;
-  $('#vName').textContent = on ? v.name : 'No video on screen';
-  $('#vPlay').textContent = on && !v.paused ? '⏸' : '▶';
+  $('#videoPanel').classList.toggle('off', !on);
+  $('#vIdle').textContent = on ? (v.paused ? 'Paused' : 'Playing') : 'Nothing playing';
+  $('#vPlay').replaceChildren(icon(on && !v.paused ? 'pause' : 'play'));
   $('#vCur').textContent = fmtTime(on ? v.time : 0);
   $('#vRem').textContent = '-' + fmtTime(on ? v.duration - v.time : 0);
-  if (!seeking) $('#vSeek').value = on && v.duration ? (v.time / v.duration) * 1000 : 0;
+  if (!seeking) setRange($('#vSeek'), on && v.duration ? (v.time / v.duration) * 1000 : 0);
 }
 
 // ---------- actions ----------
@@ -295,7 +396,7 @@ $('#next').onclick = () => link.cmd('next');
 $('#prev').onclick = () => link.cmd('prev');
 $('#blackBtn').onclick = () => link.cmd('black');
 document.querySelectorAll('#trans button').forEach((b) => (b.onclick = () => link.cmd('transition', { value: b.dataset.v })));
-document.querySelectorAll('.transport button').forEach((b) => (b.onclick = () => {
+document.querySelectorAll('.transport button[data-op]').forEach((b) => (b.onclick = () => {
   const op = b.dataset.op;
   if (op === 'back') link.cmd('video', { op: 'skip', value: -10 });
   else if (op === 'fwd') link.cmd('video', { op: 'skip', value: 10 });
@@ -323,8 +424,8 @@ $('#file').onchange = async (e) => {
 };
 $('#editBtn').onclick = () => {
   editing = !editing;
-  $('#editBtn').classList.toggle('on', editing);
-  $('#editBtn').textContent = editing ? 'Done' : 'Reorder / delete';
+  $('#editBtn').classList.toggle('active', editing);
+  $('#editBtn').replaceChildren(icon(editing ? 'check' : 'edit'), el('span', {}, editing ? 'Done' : 'Edit'));
   renderGrid();
 };
 async function move(i, d) {
@@ -337,13 +438,14 @@ async function move(i, d) {
   await updateSettings(link, (s) => { s.order = names; });
 }
 async function del(item) {
-  if (!confirm(`Delete “${item.name}” from the show?`)) return;
+  if (!confirm(`Delete “${prettyName(item.name)}” from the show?`)) return;
   await removeFile(link, 'show', item.name);
   refreshLibrary();
 }
 
 wakeLock();
 refreshLibrary();
+render();
 </script>
 </body>
 </html>
