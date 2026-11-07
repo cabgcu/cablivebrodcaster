@@ -101,16 +101,29 @@ export function cleanName(name) {
   return name.normalize('NFKD').replace(/[^\w.\-() ]+/g, '').replace(/\s+/g, '-') || 'file';
 }
 
+// Upload files one at a time, reporting e.g. "Uploading Clip · 42% (1 of 3)".
 export async function uploadFiles(link, folder, files, onProgress = () => {}) {
   let n = 0;
-  for (const f of files) {
-    onProgress(`Uploading ${f.name} (${++n}/${files.length})…`);
-    try { await uploadFile(folder, cleanName(f.name), f); }
-    catch (e) { alert(`${f.name}: ${e.message || 'upload failed'}`); }
+  uploading++;
+  try {
+    for (const f of files) {
+      n++;
+      const mb = f.size / 1024 / 1024;
+      const size = mb >= 1 ? ` · ${Math.round(mb)} MB` : '';
+      const label = (pct) => `Uploading ${prettyName(f.name)}${size} · ${pct}%` + (files.length > 1 ? ` (${n} of ${files.length})` : '');
+      onProgress(label(0), 0);
+      try { await uploadFile(folder, cleanName(f.name), f, (p) => onProgress(label(Math.floor(p * 100)), p)); }
+      catch (e) { alert(`${f.name}\n\n${e.message || 'Upload failed'}`); }
+    }
+  } finally {
+    uploading--;
+    onProgress('', null);
+    link.send({ t: 'library' });
   }
-  onProgress('');
-  link.send({ t: 'library' });
 }
+// Warn before closing the page in the middle of an upload.
+let uploading = 0;
+addEventListener('beforeunload', (e) => { if (uploading) { e.preventDefault(); e.returnValue = ''; } });
 
 export async function removeFile(link, folder, name) {
   try { await deleteFile(folder, name); } catch (e) { alert(e.message || 'delete failed'); }
@@ -246,6 +259,7 @@ const ICONS = {
   fade: '<path d="M4 12c2-6 6-6 8 0s6 6 8 0"/>',
   wave: '<path d="M4 10v4M8 6v12M12 3v18M16 7v10M20 10v4"/>',
   x: '<path d="M18 6 6 18M6 6l12 12"/>',
+  upload: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m17 8-5-5-5 5"/><path d="M12 3v12"/>',
 };
 export function icon(name, cls = '') {
   const s = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
@@ -275,4 +289,14 @@ else document.addEventListener('DOMContentLoaded', () => hydrateIcons());
 export function prettyName(name) {
   const s = String(name || '').replace(/\.[^.]+$/, '').replace(/^\d+[\s._-]*/, '').replace(/[-_]+/g, ' ').trim();
   return s ? s[0].toUpperCase() + s.slice(1) : String(name || '');
+}
+
+// Wire an upload progress box (see .upload in style.css) to uploadFiles().
+export function uploadProgress(box, button) {
+  return (text, p) => {
+    box.classList.toggle('show', !!text);
+    box.querySelector('.txt').textContent = text;
+    box.querySelector('.fill').style.width = (p || 0) * 100 + '%';
+    if (button) button.disabled = !!text;
+  };
 }

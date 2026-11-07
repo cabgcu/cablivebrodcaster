@@ -92,6 +92,10 @@
     <button class="btn btn-lg" id="fadeAll"><i data-icon="fade"></i>Fade out</button>
     <button class="btn btn-lg btn-solid-danger" id="stopAll"><i data-icon="stop"></i>Stop all</button>
   </section>
+  <div class="upload" id="upload">
+    <div class="upload-row"><i data-icon="upload"></i><span class="txt"></span><span class="note">Keep this page open</span></div>
+    <div class="track"><div class="fill"></div></div>
+  </div>
   <div class="pads" id="pads"></div>
 </main>
 
@@ -112,7 +116,7 @@
 </dialog>
 
 <script type="module">
-import { connect, summarize, loadLibrary, updateSettings, uploadFiles, removeFile, DEFAULT_STATE,
+import { connect, summarize, loadLibrary, updateSettings, uploadFiles, uploadProgress, removeFile, DEFAULT_STATE,
   $, el, icon, setRange, wakeLock } from './common.js';
 
 const COLORS = ['#e5484d', '#f76b15', '#d6a10b', '#30a46c', '#12a594', '#0090ff', '#3e63dd', '#8e4ec6', '#d6409f', '#52525b'];
@@ -236,7 +240,7 @@ $('#stopAll').onclick = () => link.cmd('sfx', { op: 'stopAll' });
 $('#fadeAll').onclick = () => link.cmd('sfx', { op: 'fadeAll' });
 $('#uploadBtn').onclick = () => $('#file').click();
 $('#file').onchange = async (e) => {
-  await uploadFiles(link, 'sounds', [...e.target.files], (s) => ($('#upStatus').textContent = s));
+  await uploadFiles(link, 'sounds', [...e.target.files], uploadProgress($('#upload'), $('#uploadBtn')));
   e.target.value = '';
   refreshLibrary();
 };

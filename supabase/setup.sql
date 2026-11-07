@@ -3,9 +3,12 @@
 -- It is safe to run again.
 
 -- 1) Storage bucket for slides, videos and sounds (public so the screen can play them).
-insert into storage.buckets (id, name, public, allowed_mime_types)
-values ('canyon-media', 'canyon-media', true, array['image/*', 'video/*', 'audio/*'])
-on conflict (id) do update set public = true, allowed_mime_types = excluded.allowed_mime_types;
+--    file_size_limit = null means "use the project's global upload limit".
+--    That global limit is set in Dashboard → Storage → Settings → "Upload file size limit".
+--    Free plan: 50 MB maximum per file. Pro and above: can be raised (e.g. to 2 GB).
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values ('canyon-media', 'canyon-media', true, null, array['image/*', 'video/*', 'audio/*'])
+on conflict (id) do update set public = true, file_size_limit = null, allowed_mime_types = excluded.allowed_mime_types;
 
 -- Let the show pages (publishable key) list, upload, replace and delete files in that bucket.
 drop policy if exists "canyon media read"   on storage.objects;

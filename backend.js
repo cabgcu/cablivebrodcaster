@@ -1,6 +1,7 @@
 // All Supabase access lives here: Realtime (commands, presence, camera
 // signalling), Storage (media files) and one small settings table.
 import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.3/+esm';
+import * as tus from 'https://cdn.jsdelivr.net/npm/tus-js-client@4.3.1/+esm';
 import { SUPABASE_URL, SUPABASE_KEY, BUCKET, ROOM } from './config.js';
 
 const sb = createClient(SUPABASE_URL, SUPABASE_KEY, {
@@ -45,11 +46,55 @@ export async function listFolder(folder) {
   }));
 }
 
-export async function uploadFile(folder, name, file) {
-  const { error } = await sb.storage.from(BUCKET).upload(`${folder}/${name}`, file, {
-    upsert: true, contentType: file.type || undefined, cacheControl: '31536000',
+// Small files go up in one request. Anything over 6 MB uses Supabase's
+// resumable (TUS) upload: sent in 6 MB chunks, with progress, and it picks up
+// where it left off if the Wi-Fi drops.
+const CHUNK = 6 * 1024 * 1024;
+const STORAGE_HOST = SUPABASE_URL.replace(/\.supabase\.co\/?$/, '.storage.supabase.co');
+
+export async function uploadFile(folder, name, file, onProgress = () => {}) {
+  const path = `${folder}/${name}`;
+  if (file.size <= CHUNK) {
+    const { error } = await sb.storage.from(BUCKET).upload(path, file, {
+      upsert: true, contentType: file.type || undefined, cacheControl: '31536000',
+    });
+    if (error) throw friendlyError(error, file);
+    onProgress(1);
+    return;
+  }
+  await new Promise((resolve, reject) => {
+    const upload = new tus.Upload(file, {
+      endpoint: `${STORAGE_HOST}/storage/v1/upload/resumable`,
+      retryDelays: [0, 1000, 3000, 5000, 10000, 20000],
+      headers: { authorization: `Bearer ${SUPABASE_KEY}`, apikey: SUPABASE_KEY, 'x-upsert': 'true' },
+      uploadDataDuringCreation: true,
+      removeFingerprintOnSuccess: true,
+      chunkSize: CHUNK, // Supabase requires exactly 6 MB chunks
+      metadata: {
+        bucketName: BUCKET, objectName: path,
+        contentType: file.type || 'application/octet-stream', cacheControl: '31536000',
+      },
+      onProgress: (sent, total) => onProgress(total ? sent / total : 0),
+      onError: (e) => reject(friendlyError(e, file)),
+      onSuccess: () => { onProgress(1); resolve(); },
+    });
+    upload.findPreviousUploads().then((prev) => {
+      if (prev.length) upload.resumeFromPreviousUpload(prev[0]);
+      upload.start();
+    });
   });
-  if (error) throw error;
+}
+
+function friendlyError(e, file) {
+  const status = String(e?.originalResponse?.getStatus?.() || e?.statusCode || e?.status || '');
+  const body = String(e?.originalResponse?.getBody?.() || e?.message || e || '');
+  if (status === '413' || /maximum allowed size|too large|payload/i.test(body)) {
+    const mb = Math.max(1, Math.round(file.size / 1024 / 1024));
+    return new Error(`This file is ${mb} MB, which is over your Supabase upload limit. ` +
+      'On the Free plan the limit is 50 MB per file. On a paid plan, raise it in the Supabase dashboard: ' +
+      'Storage → Settings → Upload file size limit.');
+  }
+  return new Error(body.replace(/^tus: /, '').slice(0, 300) || 'Upload failed');
 }
 
 export async function deleteFile(folder, name) {

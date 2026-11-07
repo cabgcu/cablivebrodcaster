@@ -182,13 +182,17 @@
         <button class="btn btn-primary" id="uploadBtn"><i data-icon="plus"></i>Add media</button>
         <input type="file" id="file" multiple accept="image/*,video/*" hidden>
       </div>
+      <div class="upload" id="upload">
+        <div class="upload-row"><i data-icon="upload"></i><span class="txt"></span><span class="note">Keep this page open</span></div>
+        <div class="track"><div class="fill"></div></div>
+      </div>
       <div class="grid" id="grid"></div>
     </section>
   </main>
 </div>
 
 <script type="module">
-import { connect, CameraViewer, summarize, loadLibrary, updateSettings, uploadFiles, removeFile, DEFAULT_STATE,
+import { connect, CameraViewer, summarize, loadLibrary, updateSettings, uploadFiles, uploadProgress, removeFile, DEFAULT_STATE,
   $, el, icon, fmtTime, setRange, wakeLock, prettyName } from './common.js';
 
 let library = { show: [], sounds: [] };
@@ -418,7 +422,7 @@ $('#oNext').onchange = (e) => link.cmd('videoOpt', { autoNext: e.target.checked 
 
 $('#uploadBtn').onclick = () => $('#file').click();
 $('#file').onchange = async (e) => {
-  await uploadFiles(link, 'show', [...e.target.files], (s) => ($('#upStatus').textContent = s));
+  await uploadFiles(link, 'show', [...e.target.files], uploadProgress($('#upload'), $('#uploadBtn')));
   e.target.value = '';
   refreshLibrary();
 };

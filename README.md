@@ -57,8 +57,33 @@ The laptop and iPads need internet access, because button presses travel through
 - Use *＋ Add slides / videos* on the controller or *＋ Add sounds* on the soundboard. You can also upload files to the `canyon-media` bucket in the Supabase dashboard: put slides and videos in the `show/` folder and sound effects in `sounds/`.
 - Slides are images (PNG/JPG/WebP/GIF). Export a PowerPoint, Keynote, Canva or Google Slides deck as images.
 - Videos: MP4 (H.264) is the most reliable format.
-- **File size:** the Supabase free plan limits each upload to **50 MB**. Compress longer videos (for example with HandBrake, 1080p) or use a paid plan.
+- **Big videos (over 50 MB):** see the next section.
 - The rundown follows filename order (`01-…`, `02-…`). You can change it on the controller with *Reorder / delete*.
+
+## Uploading large videos
+
+Supabase's **project-wide upload limit** decides how big one file can be, not this app:
+
+| Supabase plan | Largest single file |
+|---|---|
+| Free | **50 MB** (can't be raised) |
+| Pro ($25/month) and above | Whatever you set, up to 500 GB |
+
+To allow 100 MB+ videos:
+1. Upgrade the project to **Pro** (Dashboard → Organization → Billing).
+2. Go to **Storage → Settings** and set **Upload file size limit** to something like `2 GB`. Click Save.
+3. Re-run `supabase/setup.sql`. It keeps the bucket on the project-wide limit instead of a lower bucket-specific one.
+
+How large uploads work:
+- Files over 6 MB use Supabase's **resumable upload**. The file goes up in 6 MB pieces with a progress bar. If the Wi-Fi drops, the upload retries and picks up where it stopped instead of starting over.
+- Keep the page open and the iPad awake while uploading. A 150 MB video takes a minute or two on good Wi-Fi. Uploading from the laptop is usually faster.
+- If a file is over the limit, you get a message that says so and how to raise it.
+
+Things to keep in mind with big videos:
+- **Storage space:** the Free plan includes 1 GB in total; Pro includes 100 GB.
+- **Download allowance (egress):** each time the audience screen opens, it downloads every slide and video. Ten 150 MB videos are about 1.5 GB per screen load. Pro includes 250 GB/month; Free includes 5 GB.
+- **Laptop memory:** the screen keeps every video in memory so playback never waits on the internet. A few GB of video is fine on a modern laptop.
+- **On the Free plan**, compress videos to under 50 MB instead. HandBrake (free) with the "Fast 1080p30" preset usually does it, and the result looks fine on a projector.
 
 ## Backup controls on the laptop
 
