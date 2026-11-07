@@ -4,62 +4,86 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black">
-<title>Canyon Night — Live Camera</title>
-<link rel="stylesheet" href="/style.css">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#000000">
+<title>Live Camera · Canyon Night</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap">
+<link rel="stylesheet" href="style.css">
 <style>
-  html, body { height: 100%; overflow: hidden; }
-  body { display: grid; grid-template-rows: auto 1fr; }
-  #view { position: relative; background: #000; border: 6px solid transparent; transition: border-color .1s; min-height: 0; }
-  #view.live { border-color: var(--live); }
+  html, body { height: 100%; overflow: hidden; background: #000; }
+  body { padding: 0; }
+  #view { position: fixed; inset: 0; background: #000; }
   #view video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
-  #tally { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); font-weight: 800; letter-spacing: .1em;
-    padding: 6px 16px; border-radius: 8px; background: #000a; color: var(--dim); font-size: 15px; z-index: 2; }
-  #view.live #tally { background: var(--live); color: #fff; }
-  #setup { position: absolute; inset: 0; display: grid; place-items: center; z-index: 3; background: #0e0d0cee; padding: 20px; }
-  #setup .panel { width: min(420px, 100%); display: grid; gap: 12px; }
-  #setup label { display: grid; gap: 6px; font-size: 14px; color: var(--dim); }
-  #go { background: var(--live); border-color: var(--live); color: #fff; font-weight: 800; font-size: 18px; padding: 16px; }
-  .ctl { position: absolute; bottom: 12px; right: 12px; display: flex; gap: 8px; z-index: 2; }
-  .ctl button { background: #000a; padding: 10px 14px; font-size: 14px; }
-  #err { color: #ffb4ad; font-size: 14px; }
-  #hint { position: absolute; bottom: 12px; left: 12px; font-size: 12px; color: var(--dim); z-index: 2; background: #000a; padding: 6px 10px; border-radius: 8px; }
+  #view::after { content: ""; position: absolute; inset: 0; pointer-events: none; border: 0 solid var(--live);
+    transition: border-width .15s; z-index: 3; }
+  #view.live::after { border-width: 6px; }
+  .overlay { position: absolute; left: 0; right: 0; z-index: 2; display: flex; align-items: center; gap: 10px;
+    padding: calc(env(safe-area-inset-top) + 14px) calc(env(safe-area-inset-right) + 16px) 28px calc(env(safe-area-inset-left) + 16px); }
+  .overlay.top { top: 0; background: linear-gradient(rgba(0,0,0,.65), transparent); }
+  .overlay.bottom { bottom: 0; padding: 28px calc(env(safe-area-inset-right) + 16px) calc(env(safe-area-inset-bottom) + 16px) calc(env(safe-area-inset-left) + 16px);
+    background: linear-gradient(transparent, rgba(0,0,0,.65)); }
+  .tally { display: inline-flex; align-items: center; gap: 8px; height: 34px; padding: 0 14px; border-radius: 99px;
+    font-size: 13px; font-weight: 800; letter-spacing: .08em; background: rgba(255,255,255,.14); color: #fff;
+    backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); }
+  .tally::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: rgba(255,255,255,.6); }
+  #view.live .tally { background: var(--live); box-shadow: 0 0 24px rgba(255,59,59,.6); }
+  #view.live .tally::before { background: #fff; animation: blink 1.2s infinite; }
+  .camname { font-weight: 700; font-size: 15px; color: #fff; text-shadow: 0 1px 3px rgba(0,0,0,.5); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .overlay .pill { background: rgba(0,0,0,.35); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border-color: rgba(255,255,255,.12); }
+  .glass { --h: 52px; width: 52px; border-radius: 50%; background: rgba(255,255,255,.14); border: 0; color: #fff;
+    backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); }
+  .glass svg { width: 22px; height: 22px; }
+  .hint { font-size: 12.5px; font-weight: 500; color: rgba(255,255,255,.7); }
+
+  #setup { position: fixed; inset: 0; z-index: 10; display: grid; place-items: center; padding: 20px;
+    background: radial-gradient(120% 80% at 50% 0%, #1f140c 0%, var(--bg) 60%); overflow-y: auto; }
+  #setup .card { width: min(420px, 100%); padding: 24px; display: grid; gap: 16px; }
+  #setup h1 { margin: 6px 0 0; font-size: 24px; font-weight: 800; letter-spacing: -0.02em; }
+  #setup p { margin: -8px 0 0; color: var(--text-3); font-size: 14px; }
+  #setup .brand-mark { width: 44px; height: 44px; border-radius: 12px; }
+  #setup .brand-mark svg { width: 24px; height: 24px; }
+  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  #err { color: #ffb4b4; font-size: 14px; }
+  #err:empty { display: none; }
 </style>
 </head>
 <body>
-<header class="bar">
-  <h1>CANYON NIGHT · CAMERA</h1>
-  <span id="conn" class="chip bad">Not joined</span>
-  <span id="viewers" class="chip">0 viewers</span>
-</header>
 <div id="view">
-  <span id="tally">STANDBY</span>
   <video id="preview" muted playsinline autoplay></video>
-  <div class="ctl">
-    <button id="flip">⟲ Flip</button>
-    <button id="settings">⚙︎</button>
+  <div class="overlay top">
+    <span class="tally" id="tally">STANDBY</span>
+    <span class="camname" id="camName"></span>
+    <span class="spacer"></span>
+    <span id="viewers" class="pill">0 viewers</span>
+    <span id="conn" class="pill keep">Not joined</span>
   </div>
-  <div id="hint">Hold the phone sideways · keep this page open</div>
-  <div id="setup">
-    <div class="panel">
-      <h2>Join the show as a live camera</h2>
-      <label>Camera name <input type="text" id="name" placeholder="e.g. Wide shot, Host cam"></label>
-      <label>Lens
-        <select id="facing">
-          <option value="environment">Back camera</option>
-          <option value="user">Front (selfie) camera</option>
-        </select>
+  <div class="overlay bottom">
+    <span class="hint">Hold sideways · keep this page open</span>
+    <span class="spacer"></span>
+    <button class="btn glass" id="flip" title="Switch lens"><i data-icon="flip"></i></button>
+    <button class="btn glass" id="settings" title="Camera settings"><i data-icon="sliders"></i></button>
+  </div>
+</div>
+
+<div id="setup">
+  <div class="card">
+    <span class="brand-mark"><i data-icon="camera"></i></span>
+    <h1>Join as a live camera</h1>
+    <p>This phone will appear on the show controller, ready to cut to.</p>
+    <label class="field">Camera name <input type="text" id="name" placeholder="e.g. Wide shot" autocomplete="off"></label>
+    <div class="two">
+      <label class="field">Lens
+        <select id="facing"><option value="environment">Back</option><option value="user">Front</option></select>
       </label>
-      <label>Quality
-        <select id="res">
-          <option value="1080">1080p (best, needs good Wi-Fi)</option>
-          <option value="720" selected>720p (recommended)</option>
-          <option value="540">540p (weak Wi-Fi)</option>
-        </select>
+      <label class="field">Quality
+        <select id="res"><option value="1080">1080p</option><option value="720" selected>720p</option><option value="540">540p</option></select>
       </label>
-      <button id="go">● Go live-ready</button>
-      <div id="err"></div>
     </div>
+    <button class="btn btn-lg btn-primary" id="go"><i data-icon="camera"></i>Start camera</button>
+    <div class="muted" style="font-size:12.5px">720p is best for most Wi-Fi. Use 540p if the picture stutters.</div>
+    <div id="err"></div>
   </div>
 </div>
 
@@ -111,6 +135,7 @@ async function start() {
   store.set('camName', $('#name').value); store.set('camFacing', $('#facing').value); store.set('camRes', $('#res').value);
   $('#setup').style.display = 'none';
   const name = $('#name').value.trim() || 'Phone camera';
+  $('#camName').textContent = name;
   // Replace the track on every open connection (instant lens switch, no reconnect)
   const track = stream.getVideoTracks()[0];
   for (const { pc } of pcs.values()) for (const snd of pc.getSenders()) snd.replaceTrack(track);
@@ -118,7 +143,7 @@ async function start() {
     link = connect('camera', {
       meta: { name },
       onStatus: (up) => {
-        $('#conn').className = 'chip ' + (up ? 'ok' : 'bad'); $('#conn').textContent = up ? 'Online' : 'Reconnecting…';
+        $('#conn').className = 'pill keep ' + (up ? 'ok' : 'bad'); $('#conn').textContent = up ? 'Online' : 'Reconnecting…';
         if (up) link.send({ t: 'getstate' });
       },
       onMessage,
@@ -138,7 +163,7 @@ function onMessage(m) {
 function updateTally(s) {
   const live = s.program.kind === 'camera' && s.program.id === link.id;
   $('#view').classList.toggle('live', live);
-  $('#tally').textContent = live ? '● ON AIR' : 'STANDBY';
+  $('#tally').textContent = live ? 'ON AIR' : 'STANDBY';
   if (live) navigator.vibrate?.(60);
 }
 
@@ -202,7 +227,7 @@ function closePc(id) {
 function countViewers() {
   const n = [...pcs.values()].filter((e) => e.pc.connectionState === 'connected').length;
   $('#viewers').textContent = `${n} viewer${n === 1 ? '' : 's'}`;
-  $('#viewers').className = 'chip ' + (n ? 'ok' : '');
+  $('#viewers').className = 'pill ' + (n ? 'ok' : '');
 }
 
 $('#go').onclick = start;

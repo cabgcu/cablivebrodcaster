@@ -82,7 +82,7 @@ export async function loadLibrary() {
     show: ordered.map((f) => ({ name: f.name, type: kindOf(f.name), url: f.url })),
     sounds: sounds.filter((f) => kindOf(f.name) === 'audio').sort((a, b) => natural(a.name, b.name)).map((f) => ({
       name: f.name, url: f.url,
-      label: f.name.replace(/\.[^.]+$/, '').replace(/^\d+[-_ ]*/, '').replace(/[-_]+/g, ' '),
+      label: prettyName(f.name),
       vol: pads[f.name]?.vol ?? 1, loop: pads[f.name]?.loop ?? false, color: pads[f.name]?.color ?? null,
     })),
   };
@@ -211,4 +211,68 @@ export async function wakeLock() {
   const req = async () => { try { await navigator.wakeLock?.request('screen'); } catch {} };
   req();
   document.addEventListener('visibilitychange', () => document.visibilityState === 'visible' && req());
+}
+
+// ---------- icons (inline SVG, stroke style) ----------
+const ICONS = {
+  logo: '<path d="M3 20 9.5 8l4 7 2.5-4L21 20Z"/><circle cx="17" cy="5" r="1.6"/>',
+  prev: '<path d="m15 18-6-6 6-6"/>',
+  next: '<path d="m9 18 6-6-6-6"/>',
+  play: '<path d="M7 4.8v14.4a1 1 0 0 0 1.5.86l11.6-7.2a1 1 0 0 0 0-1.72L8.5 3.94A1 1 0 0 0 7 4.8Z" fill="currentColor" stroke="none"/>',
+  pause: '<rect x="6" y="4.5" width="4" height="15" rx="1.2" fill="currentColor" stroke="none"/><rect x="14" y="4.5" width="4" height="15" rx="1.2" fill="currentColor" stroke="none"/>',
+  restart: '<path d="M3 12a9 9 0 1 0 2.64-6.36L3 8.3"/><path d="M3 3.5v4.8h4.8"/>',
+  back10: '<path d="M3 12a9 9 0 1 0 2.64-6.36L3 8.3"/><path d="M3 3.5v4.8h4.8"/>',
+  fwd10: '<path d="M21 12a9 9 0 1 1-2.64-6.36L21 8.3"/><path d="M21 3.5v4.8h-4.8"/>',
+  black: '<rect x="4" y="4" width="16" height="16" rx="3" fill="currentColor" stroke="none"/>',
+  stop: '<rect x="5" y="5" width="14" height="14" rx="2.5" fill="currentColor" stroke="none"/>',
+  plus: '<path d="M12 5v14M5 12h14"/>',
+  trash: '<path d="M3 6h18"/><path d="M8 6V4.5A1.5 1.5 0 0 1 9.5 3h5A1.5 1.5 0 0 1 16 4.5V6"/><path d="m18.5 6-.8 13.1A2 2 0 0 1 15.7 21H8.3a2 2 0 0 1-2-1.9L5.5 6"/>',
+  camera: '<path d="m22 8-6 4 6 4V8Z"/><rect x="2" y="6" width="14" height="12" rx="2.5"/>',
+  image: '<rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="9" cy="9" r="2"/><path d="m21 15-4.5-4.5L5 21"/>',
+  film: '<rect x="3" y="3" width="18" height="18" rx="3"/><path d="M7 3v18M17 3v18M3 8h4M3 16h4M17 8h4M17 16h4"/>',
+  volume: '<path d="M11 5 6 9H3v6h3l5 4V5Z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M18.5 5.5a9 9 0 0 1 0 13"/>',
+  repeat: '<path d="m17 2 4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="m7 22-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/>',
+  edit: '<path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/>',
+  check: '<path d="M20 6 9 17l-5-5"/>',
+  home: '<path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1Z"/>',
+  monitor: '<rect x="2" y="3" width="20" height="14" rx="2.5"/><path d="M8 21h8M12 17v4"/>',
+  tablet: '<rect x="4" y="2" width="16" height="20" rx="2.5"/><path d="M11 18h2"/>',
+  phone: '<rect x="6.5" y="2" width="11" height="20" rx="2.5"/><path d="M11 18h2"/>',
+  music: '<path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>',
+  flip: '<path d="M3 12a9 9 0 0 1 15.36-6.36L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-15.36 6.36L3 16"/><path d="M3 21v-5h5"/>',
+  sliders: '<path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/>',
+  layers: '<path d="m12 2 10 5-10 5L2 7Z"/><path d="m2 17 10 5 10-5"/><path d="m2 12 10 5 10-5"/>',
+  alert: '<path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4M12 17h.01"/>',
+  fade: '<path d="M4 12c2-6 6-6 8 0s6 6 8 0"/>',
+  wave: '<path d="M4 10v4M8 6v12M12 3v18M16 7v10M20 10v4"/>',
+  x: '<path d="M18 6 6 18M6 6l12 12"/>',
+};
+export function icon(name, cls = '') {
+  const s = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  s.setAttribute('viewBox', '0 0 24 24');
+  s.setAttribute('class', 'i ' + cls);
+  s.setAttribute('aria-hidden', 'true');
+  s.innerHTML = ICONS[name] || '';
+  return s;
+}
+// Replace <i data-icon="name"></i> placeholders in static markup.
+export function hydrateIcons(root = document) {
+  root.querySelectorAll('i[data-icon]').forEach((i) => i.replaceWith(icon(i.dataset.icon, i.className)));
+}
+
+// Range inputs show a filled track up to the thumb.
+export function paintRange(r) {
+  const min = Number(r.min || 0), max = Number(r.max || 100);
+  r.style.setProperty('--p', ((Number(r.value) - min) / (max - min || 1)) * 100 + '%');
+}
+export function setRange(r, v) { r.value = v; paintRange(r); }
+document.addEventListener('input', (e) => { if (e.target.type === 'range') paintRange(e.target); });
+
+if (document.readyState !== 'loading') hydrateIcons();
+else document.addEventListener('DOMContentLoaded', () => hydrateIcons());
+
+// "03-guest_intro.png" -> "Guest intro"
+export function prettyName(name) {
+  const s = String(name || '').replace(/\.[^.]+$/, '').replace(/^\d+[\s._-]*/, '').replace(/[-_]+/g, ' ').trim();
+  return s ? s[0].toUpperCase() + s.slice(1) : String(name || '');
 }

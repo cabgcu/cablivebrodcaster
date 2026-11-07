@@ -3,73 +3,98 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#09090b">
 <title>Canyon Night Live</title>
-<link rel="stylesheet" href="/style.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap">
+<link rel="stylesheet" href="style.css">
 <style>
-  body { -webkit-user-select: text; user-select: text; }
-  main { max-width: 1100px; margin: 0 auto; padding: 20px 16px 40px; }
-  h2.title { font-size: 34px; margin: 10px 0 4px; color: var(--accent); letter-spacing: .04em; }
-  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; margin-top: 20px; }
-  .card { display: grid; gap: 10px; align-content: start; }
-  .card h3 { margin: 0; font-size: 18px; }
-  .card .who { font-size: 13px; color: var(--accent); font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
-  .card img { width: 100%; max-width: 200px; background: #fff; border-radius: 10px; padding: 6px; justify-self: center; }
-  .card a.url { color: var(--text); word-break: break-all; font-size: 14px; font-family: ui-monospace, Menlo, monospace; }
-  .card a.btn { text-align: center; text-decoration: none; background: var(--accent); color: #111; font-weight: 700;
-    padding: 12px; border-radius: 12px; }
-  .steps { margin-top: 24px; } .steps li { margin: 6px 0; color: var(--dim); } .steps b { color: var(--text); }
-  select { margin-left: 6px; }
+  body { -webkit-user-select: text; user-select: text;
+    background: radial-gradient(90% 60% at 50% -10%, #2a170a 0%, var(--bg) 60%) fixed, var(--bg); }
+  main { max-width: 1120px; margin: 0 auto; padding: 48px 20px 64px; }
+  .hero { display: flex; align-items: center; gap: 16px; margin-bottom: 8px; }
+  .hero .brand-mark { width: 52px; height: 52px; border-radius: 14px; }
+  .hero .brand-mark svg { width: 28px; height: 28px; }
+  h1 { margin: 0; font-size: clamp(28px, 4vw, 40px); font-weight: 800; letter-spacing: -0.03em; line-height: 1.05; }
+  .lead { color: var(--text-2); font-size: 16px; margin: 14px 0 32px; max-width: 620px; }
+  .devices { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; }
+  .device { display: flex; flex-direction: column; padding: 20px; gap: 14px; text-decoration: none; color: inherit;
+    transition: border-color .15s, transform .15s; }
+  .device:hover { border-color: var(--border-strong); transform: translateY(-2px); }
+  .device .ic { width: 44px; height: 44px; border-radius: 12px; display: grid; place-items: center; background: var(--surface-2); color: var(--accent); }
+  .device .ic svg { width: 22px; height: 22px; }
+  .device h2 { margin: 0; font-size: 18px; font-weight: 700; letter-spacing: -0.01em; }
+  .device p { margin: 0; color: var(--text-3); font-size: 14px; flex: 1; }
+  .qr { background: #fff; border-radius: 14px; padding: 10px; width: 100%; max-width: 168px; aspect-ratio: 1; align-self: center; }
+  .qr img { width: 100%; height: 100%; display: block; image-rendering: pixelated; }
+  .device .btn { width: 100%; }
+  .scan { font-size: 12px; color: var(--text-3); text-align: center; margin-top: -6px; }
+  .steps { margin-top: 40px; padding: 24px; }
+  .steps h3 { margin: 0 0 16px; font-size: 16px; font-weight: 700; }
+  .steps ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 14px; counter-reset: s; }
+  .steps li { display: grid; grid-template-columns: 28px 1fr; gap: 12px; color: var(--text-2); font-size: 14.5px; counter-increment: s; }
+  .steps li::before { content: counter(s); width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center;
+    background: var(--surface-2); color: var(--text); font-weight: 700; font-size: 13px; }
+  .steps b { color: var(--text); font-weight: 600; }
+  #warn { margin: 0 0 24px; }
 </style>
 </head>
 <body>
 <main>
-  <h2 class="title">CANYON NIGHT LIVE</h2>
-  <div class="muted">Show control. Open each page on its device. Phones and iPads can scan the codes.</div>
-  <div id="warn" class="panel" style="display:none;margin-top:14px;border-color:#6b5a12;color:#fff3c4"></div>
-
-  <div class="cards" id="cards"></div>
-
-  <div class="panel steps">
-    <h2>Show-day checklist</h2>
-    <ol>
-      <li><b>Laptop:</b> connect the projector/TV, drag a Chrome window onto it and open <b>Audience screen</b>. Click once to turn on sound and go full screen. Wait for the controller to say <i>Screen live</i>: that means all slides and videos are downloaded to the laptop.</li>
-      <li><b>iPad 1:</b> scan the <b>Show control</b> code. Use Share → “Add to Home Screen” to get a full-screen app.</li>
-      <li><b>iPad 2:</b> scan the <b>Soundboard</b> code.</li>
-      <li><b>Phones:</b> scan the <b>Live camera</b> code, allow camera access, name the camera and tap <i>Go live-ready</i>.</li>
-      <li>Put the laptop and camera phones on the <b>same Wi-Fi</b>. Camera video goes straight from phone to laptop over that Wi-Fi.</li>
-      <li>Turn off Auto-Lock on the camera phones (Settings → Display &amp; Brightness), or plug them in. If a phone locks, its camera feed stops.</li>
-    </ol>
+  <div class="hero">
+    <span class="brand-mark"><i data-icon="logo"></i></span>
+    <div>
+      <div class="eyebrow">Show control</div>
+      <h1>Canyon Night Live</h1>
+    </div>
   </div>
+  <p class="lead">Open each page on its device. iPads and phones can scan the codes. Everything plays from the laptop that runs the audience screen.</p>
+  <div id="warn" class="banner"><i data-icon="alert"></i><span></span></div>
+
+  <div class="devices" id="cards"></div>
+
+  <section class="card steps">
+    <h3>Before the show</h3>
+    <ol>
+      <li><span><b>Laptop:</b> connect the projector, drag a Chrome window onto it and open <b>Audience screen</b>. Click once to turn on sound and go full screen. Wait until the controller says <b>Screen live</b>, which means every slide and video has downloaded.</span></li>
+      <li><span><b>iPad 1:</b> scan <b>Show control</b>. In Safari, Share → <i>Add to Home Screen</i> makes it a full-screen app.</span></li>
+      <li><span><b>iPad 2:</b> scan <b>Soundboard</b>.</span></li>
+      <li><span><b>Phones:</b> scan <b>Live camera</b>, allow camera access, name the camera and tap <i>Start camera</i>.</span></li>
+      <li><span>Keep the laptop and camera phones on the <b>same Wi-Fi</b>. Turn off Auto-Lock on camera phones, or plug them in. A locked phone stops its camera.</span></li>
+    </ol>
+  </section>
 </main>
 <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js"></script>
 <script type="module">
-import { $, el } from './common.js';
+import { $, el, icon } from './common.js';
 
 const base = new URL('.', location.href).href;
 function qr(text) {
   const q = qrcode(0, 'M'); q.addData(text); q.make();
-  return 'data:image/svg+xml;utf8,' + encodeURIComponent(q.createSvgTag({ cellSize: 4, margin: 2, scalable: true }));
+  return 'data:image/svg+xml;utf8,' + encodeURIComponent(q.createSvgTag({ cellSize: 4, margin: 0, scalable: true }));
 }
 const cards = [
-  { who: 'Laptop → projector', title: 'Audience screen', page: 'screen.html', qr: false,
-    note: 'Open on the show laptop. Slides, videos, cameras and all sound come out here.' },
-  { who: 'iPad 1', title: 'Show control', page: 'control.html', note: 'Slides, videos, cutting to cameras.' },
-  { who: 'iPad 2', title: 'Soundboard', page: 'sound.html', note: 'Sound effects play through the laptop.' },
-  { who: 'Phones', title: 'Live camera', page: 'camera.html', note: 'Each phone becomes a camera the show controller can cut to.' },
+  { ic: 'monitor', who: 'Laptop', title: 'Audience screen', page: 'screen.html', qr: false,
+    note: 'Goes on the projector. Slides, videos, cameras and all sound come out here.' },
+  { ic: 'tablet', who: 'iPad 1', title: 'Show control', page: 'control.html', note: 'Run slides and videos, and cut to cameras.' },
+  { ic: 'music', who: 'iPad 2', title: 'Soundboard', page: 'sound.html', note: 'Trigger sound effects on the laptop speakers.' },
+  { ic: 'phone', who: 'Phones', title: 'Live camera', page: 'camera.html', note: 'Turn a phone into a camera you can cut to.' },
 ];
 $('#cards').replaceChildren(...cards.map((c) => {
   const url = base + c.page;
-  return el('div', { class: 'panel card' },
-    el('div', { class: 'who' }, c.who),
-    el('h3', {}, c.title),
-    c.qr === false ? null : el('img', { src: qr(url), alt: 'QR code for ' + c.title }),
-    el('a', { class: 'url', href: url }, url),
-    el('div', { class: 'muted', style: 'font-size:14px' }, c.note),
-    el('a', { class: 'btn', href: url }, 'Open'));
+  return el('div', { class: 'card device' },
+    el('div', { style: 'display:flex;align-items:center;gap:12px' },
+      el('span', { class: 'ic' }, icon(c.ic)),
+      el('div', {}, el('div', { class: 'eyebrow' }, c.who), el('h2', {}, c.title))),
+    el('p', {}, c.note),
+    c.qr === false ? null : el('div', { class: 'qr' }, el('img', { src: qr(url), alt: 'QR code for ' + c.title })),
+    c.qr === false ? null : el('div', { class: 'scan' }, 'Scan with the device’s camera'),
+    el('a', { class: 'btn ' + (c.qr === false ? 'btn-primary' : ''), href: url }, 'Open ' + c.title.toLowerCase(), icon('next')));
 }));
 if (location.protocol !== 'https:' && !['localhost', '127.0.0.1'].includes(location.hostname)) {
-  $('#warn').style.display = 'block';
-  $('#warn').textContent = 'This page isn’t on https://. Phone cameras only work from a secure (https) web address, such as GitHub Pages.';
+  $('#warn').classList.add('show');
+  $('#warn').querySelector('span').textContent = 'This page isn’t on https://. Phone cameras only work from a secure web address, such as GitHub Pages.';
 }
 </script>
 </body>
