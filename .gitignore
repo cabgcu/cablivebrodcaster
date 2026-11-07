@@ -1,8 +1,1 @@
-node_modules/
-.certs/
-media/settings.json
-media/show/*
-media/sounds/*
-!media/show/README.txt
-!media/sounds/README.txt
 .DS_Store

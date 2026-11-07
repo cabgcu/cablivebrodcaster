@@ -42,7 +42,7 @@
 <body>
 <header class="bar">
   <h1>CANYON NIGHT · SHOW</h1>
-  <span id="conn" class="chip bad">Server</span>
+  <span id="conn" class="chip bad">Connecting…</span>
   <span id="scr" class="chip bad">Screen</span>
   <span class="grow"></span>
   <span class="muted" style="font-size:13px">Transition</span>
@@ -108,24 +108,35 @@
 <div class="toast" id="toast"></div>
 
 <script type="module">
-import { connect, CameraViewer, $, el, fmtTime, uploadFiles } from './common.js';
+import { connect, CameraViewer, summarize, loadLibrary, updateSettings, uploadFiles, removeFile, DEFAULT_STATE, $, el, fmtTime, wakeLock } from './common.js';
 
 let library = { show: [], sounds: [] };
-let state = null;
+let state = null; // comes from the audience screen
+let room = summarize([]);
 let vstatus = { name: null };
 let editing = false;
 const camStreams = new Map();
 
 const link = connect('control', {
-  onStatus: (up) => { $('#conn').className = 'chip ' + (up ? 'ok' : 'bad'); $('#conn').textContent = up ? 'Server' : 'Server offline'; },
+  onStatus: (up) => {
+    $('#conn').className = 'chip ' + (up ? 'ok' : 'bad');
+    $('#conn').textContent = up ? 'Online' : 'Offline';
+    if (up) link.send({ t: 'getstate' });
+  },
   onMessage: (m) => {
-    if (m.t === 'welcome') { cams.reset(); library = m.library; setState(m.state); renderGrid(); }
-    else if (m.t === 'library') { library = m.library; renderGrid(); render(); }
-    else if (m.t === 'state') setState(m.state);
+    if (m.t === 'state') { state = m.state; render(); }
+    else if (m.t === 'library') refreshLibrary();
     else if (m.t === 'vstatus') { vstatus = m; renderVideo(); }
     else if (m.t === 'signal') cams.handleSignal(m.from, m.data);
-    else if (m.t === 'peer-left') cams.drop(m.id);
   },
+  onPeers: (peers) => {
+    const hadScreen = room.screens;
+    room = summarize(peers);
+    if (room.screens && !hadScreen) link.send({ t: 'getstate' });
+    cams.sync(room.cameras);
+    render();
+  },
+  onPeerLeft: (id) => cams.drop(id, true),
 });
 
 const cams = new CameraViewer(link, {
@@ -134,13 +145,15 @@ const cams = new CameraViewer(link, {
   onGone: (id) => { camStreams.delete(id); render(); },
 });
 
-function setState(s) {
-  state = s;
-  cams.sync(s.cameras);
-  render();
+async function refreshLibrary() {
+  try { library = await loadLibrary(); $('#upStatus').textContent = ''; }
+  catch (e) { $('#upStatus').textContent = 'Can’t load media: ' + (e.message || e); }
+  renderGrid();
 }
 
 // ---------- rendering ----------
+const S = () => state || DEFAULT_STATE;
+
 function mediaThumb(item) {
   if (item.type === 'video') {
     return el('video', { src: item.url + '#t=0.5', muted: true, playsInline: true, preload: 'metadata' });
@@ -149,8 +162,8 @@ function mediaThumb(item) {
 }
 
 function nextIndex() {
-  if (!state) return 0;
-  const cur = state.program.kind === 'show' ? state.program.index : (state.lastShowIndex ?? -1);
+  const p = S().program;
+  const cur = p.kind === 'show' ? p.index : (S().lastShowIndex ?? -1);
   return Math.min(cur + 1, library.show.length - 1);
 }
 
@@ -160,7 +173,7 @@ function renderGrid() {
   grid.classList.toggle('editing', editing);
   if (!library.show.length) {
     grid.append(el('div', { class: 'empty', style: 'grid-column:1/-1' },
-      'No slides yet. Tap “Add slides / videos”, or drop files into the media/show folder on the laptop. ',
+      'No slides yet. Tap “Add slides / videos”. ',
       'Tip: export your PowerPoint/Keynote/Canva deck as images (PNG/JPG).'));
     return;
   }
@@ -181,9 +194,8 @@ function renderGrid() {
 }
 
 function render() {
-  if (!state) return;
-  const p = state.program;
-  // Highlight live + next in rundown
+  const st = S();
+  const p = st.program;
   const ni = nextIndex();
   document.querySelectorAll('#grid .item').forEach((card) => {
     const i = Number(card.dataset.i);
@@ -200,43 +212,40 @@ function render() {
   // Live preview
   const lt = $('#liveThumb');
   const name = $('#liveName');
-  const liveKey = p.kind === 'show' ? 'show:' + p.name : p.kind === 'camera' ? 'cam:' + p.id + ':' + camStreams.has(p.id) : 'black';
+  const liveKey = p.kind === 'show' ? 'show:' + p.name + library.show.length : p.kind === 'camera' ? 'cam:' + p.id + ':' + camStreams.has(p.id) : 'black';
   if (lt.dataset.key !== liveKey) {
     lt.dataset.key = liveKey;
     lt.querySelectorAll('img,video').forEach((x) => x.remove());
-    if (p.kind === 'show' && library.show[p.index]) {
-      lt.prepend(mediaThumb(library.show[p.index]));
-    } else if (p.kind === 'camera' && camStreams.get(p.id)) {
+    if (p.kind === 'show' && library.show[p.index]) lt.prepend(mediaThumb(library.show[p.index]));
+    else if (p.kind === 'camera' && camStreams.get(p.id)) {
       lt.prepend(el('video', { srcObject: camStreams.get(p.id), muted: true, autoplay: true, playsInline: true }));
     }
   }
   name.classList.remove('black');
-  if (p.kind === 'show' && library.show[p.index]) {
-    name.textContent = `${p.index + 1}. ${library.show[p.index].name}`;
-  } else if (p.kind === 'camera') {
-    name.textContent = '🎥 ' + (state.cameras.find((c) => c.id === p.id)?.name || 'Camera');
-  } else {
-    name.textContent = 'Black screen'; name.classList.add('black');
-  }
+  if (p.kind === 'show' && library.show[p.index]) name.textContent = `${p.index + 1}. ${library.show[p.index].name}`;
+  else if (p.kind === 'camera') name.textContent = '🎥 ' + (room.cameras.find((c) => c.id === p.id)?.name || 'Camera');
+  else { name.textContent = 'Black screen'; name.classList.add('black'); }
 
-  // Transition + options
-  document.querySelectorAll('#trans button').forEach((b) => b.classList.toggle('on', b.dataset.v === state.transition));
-  $('#oAuto').checked = state.video.autoplay;
-  $('#oLoop').checked = state.video.loop;
-  $('#oNext').checked = state.video.autoNext;
-  if (document.activeElement !== $('#vVol')) $('#vVol').value = state.video.volume;
+  document.querySelectorAll('#trans button').forEach((b) => b.classList.toggle('on', b.dataset.v === st.transition));
+  $('#oAuto').checked = st.video.autoplay;
+  $('#oLoop').checked = st.video.loop;
+  $('#oNext').checked = st.video.autoNext;
+  if (document.activeElement !== $('#vVol')) $('#vVol').value = st.video.volume;
 
   // Screen status
   const scr = $('#scr');
   const warn = $('#warn');
-  if (!state.screens) {
+  if (!room.screens) {
     scr.className = 'chip bad'; scr.textContent = 'Screen offline';
-    warn.className = 'show'; warn.textContent = 'The audience screen isn’t open. On the laptop, open /screen in Chrome.';
-  } else if (!state.screenReady) {
+    warn.className = 'show'; warn.textContent = 'The audience screen isn’t open. On the laptop, open the Audience screen page in Chrome.';
+  } else if (!room.screenReady) {
     scr.className = 'chip warn'; scr.textContent = 'Screen not started';
     warn.className = 'show'; warn.textContent = 'Audience screen is open but not started — click once on the laptop screen to turn on sound & full screen.';
   } else {
-    scr.className = 'chip ok'; scr.textContent = 'Screen live'; warn.className = '';
+    const [a, b] = (room.cached || '0/0').split('/').map(Number);
+    scr.className = 'chip ' + (a < b ? 'warn' : 'ok');
+    scr.textContent = a < b ? `Screen loading media ${a}/${b}` : 'Screen live';
+    warn.className = '';
   }
   renderCams();
   renderVideo();
@@ -244,16 +253,15 @@ function render() {
 
 function renderCams() {
   const box = $('#cams');
-  if (!state) return;
-  const ids = state.cameras.map((c) => c.id + c.name).join() + [...camStreams.keys()].join();
+  const ids = room.cameras.map((c) => c.id + c.name).join() + [...camStreams.keys()].join();
   if (box.dataset.ids !== ids) {
     box.dataset.ids = ids;
     box.replaceChildren();
-    if (!state.cameras.length) {
+    if (!room.cameras.length) {
       box.append(el('div', { class: 'empty', style: 'grid-column:1/-1' },
-        'No cameras connected. On a phone, open the camera link from the laptop’s start page (scan the QR code).'));
+        'No cameras connected. On a phone, open the Live camera page (scan the QR code on the start page).'));
     }
-    for (const c of state.cameras) {
+    for (const c of room.cameras) {
       const s = camStreams.get(c.id);
       const t = el('div', { class: 'thumb', 'data-id': c.id },
         s ? el('video', { srcObject: s, muted: true, autoplay: true, playsInline: true }) : 'connecting…');
@@ -261,8 +269,9 @@ function renderCams() {
         t, el('div', { class: 'caption' }, '🎥 ' + c.name)));
     }
   }
+  const p = S().program;
   box.querySelectorAll('.thumb').forEach((t) => {
-    const live = state.program.kind === 'camera' && state.program.id === t.dataset.id;
+    const live = p.kind === 'camera' && p.id === t.dataset.id;
     t.classList.toggle('live', live);
     t.querySelector('.badge')?.remove();
     if (live) t.append(el('span', { class: 'badge live' }, 'LIVE'));
@@ -308,8 +317,9 @@ $('#oNext').onchange = (e) => link.cmd('videoOpt', { autoNext: e.target.checked 
 
 $('#uploadBtn').onclick = () => $('#file').click();
 $('#file').onchange = async (e) => {
-  await uploadFiles('show', [...e.target.files], (s) => ($('#upStatus').textContent = s));
+  await uploadFiles(link, 'show', [...e.target.files], (s) => ($('#upStatus').textContent = s));
   e.target.value = '';
+  refreshLibrary();
 };
 $('#editBtn').onclick = () => {
   editing = !editing;
@@ -317,21 +327,23 @@ $('#editBtn').onclick = () => {
   $('#editBtn').textContent = editing ? 'Done' : 'Reorder / delete';
   renderGrid();
 };
-function move(i, d) {
+async function move(i, d) {
   const names = library.show.map((x) => x.name);
   const j = i + d;
   if (j < 0 || j >= names.length) return;
   [names[i], names[j]] = [names[j], names[i]];
-  link.cmd('reorder', { order: names });
+  library.show = names.map((n) => library.show.find((x) => x.name === n));
+  renderGrid();
+  await updateSettings(link, (s) => { s.order = names; });
 }
 async function del(item) {
   if (!confirm(`Delete “${item.name}” from the show?`)) return;
-  await fetch(`/api/delete?kind=show&name=${encodeURIComponent(item.name)}`, { method: 'POST' });
+  await removeFile(link, 'show', item.name);
+  refreshLibrary();
 }
 
-// Keep the iPad awake
-async function wake() { try { await navigator.wakeLock?.request('screen'); } catch {} }
-wake(); document.addEventListener('visibilitychange', () => document.visibilityState === 'visible' && wake());
+wakeLock();
+refreshLibrary();
 </script>
 </body>
 </html>

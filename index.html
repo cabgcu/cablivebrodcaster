@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Canyon Night Live</title>
+<link rel="stylesheet" href="/style.css">
+<style>
+  body { -webkit-user-select: text; user-select: text; }
+  main { max-width: 1100px; margin: 0 auto; padding: 20px 16px 40px; }
+  h2.title { font-size: 34px; margin: 10px 0 4px; color: var(--accent); letter-spacing: .04em; }
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; margin-top: 20px; }
+  .card { display: grid; gap: 10px; align-content: start; }
+  .card h3 { margin: 0; font-size: 18px; }
+  .card .who { font-size: 13px; color: var(--accent); font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+  .card img { width: 100%; max-width: 200px; background: #fff; border-radius: 10px; padding: 6px; justify-self: center; }
+  .card a.url { color: var(--text); word-break: break-all; font-size: 14px; font-family: ui-monospace, Menlo, monospace; }
+  .card a.btn { text-align: center; text-decoration: none; background: var(--accent); color: #111; font-weight: 700;
+    padding: 12px; border-radius: 12px; }
+  .steps { margin-top: 24px; } .steps li { margin: 6px 0; color: var(--dim); } .steps b { color: var(--text); }
+  select { margin-left: 6px; }
+</style>
+</head>
+<body>
+<main>
+  <h2 class="title">CANYON NIGHT LIVE</h2>
+  <div class="muted">Show control. Open each page on its device. Phones and iPads can scan the codes.</div>
+  <div id="warn" class="panel" style="display:none;margin-top:14px;border-color:#6b5a12;color:#fff3c4"></div>
+
+  <div class="cards" id="cards"></div>
+
+  <div class="panel steps">
+    <h2>Show-day checklist</h2>
+    <ol>
+      <li><b>Laptop:</b> connect the projector/TV, drag a Chrome window onto it and open <b>Audience screen</b>. Click once to turn on sound and go full screen. Wait for the controller to say <i>Screen live</i>: that means all slides and videos are downloaded to the laptop.</li>
+      <li><b>iPad 1:</b> scan the <b>Show control</b> code. Use Share → “Add to Home Screen” to get a full-screen app.</li>
+      <li><b>iPad 2:</b> scan the <b>Soundboard</b> code.</li>
+      <li><b>Phones:</b> scan the <b>Live camera</b> code, allow camera access, name the camera and tap <i>Go live-ready</i>.</li>
+      <li>Put the laptop and camera phones on the <b>same Wi-Fi</b>. Camera video goes straight from phone to laptop over that Wi-Fi.</li>
+      <li>Turn off Auto-Lock on the camera phones (Settings → Display &amp; Brightness), or plug them in. If a phone locks, its camera feed stops.</li>
+    </ol>
+  </div>
+</main>
+<script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js"></script>
+<script type="module">
+import { $, el } from './common.js';
+
+const base = new URL('.', location.href).href;
+function qr(text) {
+  const q = qrcode(0, 'M'); q.addData(text); q.make();
+  return 'data:image/svg+xml;utf8,' + encodeURIComponent(q.createSvgTag({ cellSize: 4, margin: 2, scalable: true }));
+}
+const cards = [
+  { who: 'Laptop → projector', title: 'Audience screen', page: 'screen.html', qr: false,
+    note: 'Open on the show laptop. Slides, videos, cameras and all sound come out here.' },
+  { who: 'iPad 1', title: 'Show control', page: 'control.html', note: 'Slides, videos, cutting to cameras.' },
+  { who: 'iPad 2', title: 'Soundboard', page: 'sound.html', note: 'Sound effects play through the laptop.' },
+  { who: 'Phones', title: 'Live camera', page: 'camera.html', note: 'Each phone becomes a camera the show controller can cut to.' },
+];
+$('#cards').replaceChildren(...cards.map((c) => {
+  const url = base + c.page;
+  return el('div', { class: 'panel card' },
+    el('div', { class: 'who' }, c.who),
+    el('h3', {}, c.title),
+    c.qr === false ? null : el('img', { src: qr(url), alt: 'QR code for ' + c.title }),
+    el('a', { class: 'url', href: url }, url),
+    el('div', { class: 'muted', style: 'font-size:14px' }, c.note),
+    el('a', { class: 'btn', href: url }, 'Open'));
+}));
+if (location.protocol !== 'https:' && !['localhost', '127.0.0.1'].includes(location.hostname)) {
+  $('#warn').style.display = 'block';
+  $('#warn').textContent = 'This page isn’t on https://. Phone cameras only work from a secure (https) web address, such as GitHub Pages.';
+}
+</script>
+</body>
+</html>
