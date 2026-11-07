@@ -1,0 +1,337 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<title>Canyon Night — Show Control</title>
+<link rel="stylesheet" href="/style.css">
+<style>
+  main { display: grid; gap: 12px; padding: 12px; grid-template-columns: minmax(300px, 380px) 1fr; align-items: start; }
+  @media (max-width: 900px) { main { grid-template-columns: 1fr; } }
+  .left { display: grid; gap: 12px; position: sticky; top: 70px; }
+  @media (max-width: 900px) { .left { position: static; } }
+  .liveName { font-weight: 700; font-size: 18px; margin-top: 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .liveName.black { color: var(--dim); }
+  .bigbtns { display: grid; grid-template-columns: 1fr 1.6fr; gap: 10px; }
+  .bigbtns button { font-size: 22px; font-weight: 700; padding: 22px 10px; border-radius: 16px; }
+  #next { background: #1f3d24; border-color: #2f6b38; }
+  #blackBtn { grid-column: 1 / -1; padding: 14px; font-size: 16px; }
+  .transport { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+  .transport button { padding: 14px 4px; font-size: 18px; }
+  .scrub { display: flex; align-items: center; gap: 10px; margin: 10px 0 4px; font-variant-numeric: tabular-nums; font-size: 14px; }
+  .opts { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 10px; }
+  .vol { display: flex; align-items: center; gap: 10px; margin-top: 6px; font-size: 14px; color: var(--dim); }
+  .right { display: grid; gap: 12px; }
+  .cams { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 10px; }
+  .cam { cursor: pointer; }
+  .cam .thumb { display: grid; place-items: center; color: var(--dim); font-size: 13px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+  .item { cursor: pointer; position: relative; }
+  .item .num { position: absolute; bottom: 6px; left: 6px; font-size: 11px; background: #000b; padding: 1px 6px; border-radius: 5px; }
+  .edit { display: none; gap: 4px; margin-top: 4px; }
+  .editing .edit { display: flex; }
+  .edit button { flex: 1; padding: 6px 0; font-size: 14px; border-radius: 8px; }
+  .tools { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  #warn { display: none; background: #3a2c08; border: 1px solid #6b5a12; color: #fff3c4; padding: 10px 14px; border-radius: 12px; margin: 12px 12px 0; }
+  #warn.show { display: block; }
+</style>
+</head>
+<body>
+<header class="bar">
+  <h1>CANYON NIGHT · SHOW</h1>
+  <span id="conn" class="chip bad">Server</span>
+  <span id="scr" class="chip bad">Screen</span>
+  <span class="grow"></span>
+  <span class="muted" style="font-size:13px">Transition</span>
+  <div class="seg" id="trans"><button data-v="cut">Cut</button><button data-v="fade">Fade</button></div>
+</header>
+<div id="warn"></div>
+
+<main>
+  <section class="left">
+    <div class="panel">
+      <h2>On screen now</h2>
+      <div class="thumb live" id="liveThumb"><span class="badge live">LIVE</span></div>
+      <div class="liveName" id="liveName">—</div>
+    </div>
+
+    <div class="bigbtns">
+      <button id="prev">◀ Back</button>
+      <button id="next">Next ▶</button>
+      <button id="blackBtn" class="danger">■ Black screen</button>
+    </div>
+
+    <div class="panel" id="videoPanel">
+      <h2>Video</h2>
+      <div id="vName" class="muted" style="font-size:14px">No video on screen</div>
+      <div class="scrub">
+        <span id="vCur">0:00</span>
+        <input type="range" id="vSeek" min="0" max="1000" value="0" step="1">
+        <span id="vRem">-0:00</span>
+      </div>
+      <div class="transport">
+        <button data-op="restart" title="Restart">⏮</button>
+        <button data-op="back">−10s</button>
+        <button data-op="toggle" id="vPlay">▶</button>
+        <button data-op="fwd">+10s</button>
+      </div>
+      <div class="vol">🔊 <input type="range" id="vVol" min="0" max="1" step="0.01"></div>
+      <div class="opts">
+        <label class="chk"><input type="checkbox" id="oAuto"> Autoplay</label>
+        <label class="chk"><input type="checkbox" id="oLoop"> Loop</label>
+        <label class="chk"><input type="checkbox" id="oNext"> Next when done</label>
+      </div>
+    </div>
+  </section>
+
+  <section class="right">
+    <div class="panel">
+      <h2>Live cameras — tap to cut</h2>
+      <div class="cams" id="cams"></div>
+    </div>
+
+    <div class="panel" id="rundownPanel">
+      <h2 style="display:flex;align-items:center;gap:10px">Rundown — tap any slide or video to put it on screen</h2>
+      <div class="tools" style="margin-bottom:12px">
+        <button id="uploadBtn">＋ Add slides / videos</button>
+        <button id="editBtn">Reorder / delete</button>
+        <span id="upStatus" class="muted" style="font-size:13px"></span>
+        <input type="file" id="file" multiple accept="image/*,video/*" hidden>
+      </div>
+      <div class="grid" id="grid"></div>
+    </div>
+  </section>
+</main>
+<div class="toast" id="toast"></div>
+
+<script type="module">
+import { connect, CameraViewer, $, el, fmtTime, uploadFiles } from './common.js';
+
+let library = { show: [], sounds: [] };
+let state = null;
+let vstatus = { name: null };
+let editing = false;
+const camStreams = new Map();
+
+const link = connect('control', {
+  onStatus: (up) => { $('#conn').className = 'chip ' + (up ? 'ok' : 'bad'); $('#conn').textContent = up ? 'Server' : 'Server offline'; },
+  onMessage: (m) => {
+    if (m.t === 'welcome') { cams.reset(); library = m.library; setState(m.state); renderGrid(); }
+    else if (m.t === 'library') { library = m.library; renderGrid(); render(); }
+    else if (m.t === 'state') setState(m.state);
+    else if (m.t === 'vstatus') { vstatus = m; renderVideo(); }
+    else if (m.t === 'signal') cams.handleSignal(m.from, m.data);
+    else if (m.t === 'peer-left') cams.drop(m.id);
+  },
+});
+
+const cams = new CameraViewer(link, {
+  quality: 'low',
+  onStream: (id, stream) => { camStreams.set(id, stream); render(); },
+  onGone: (id) => { camStreams.delete(id); render(); },
+});
+
+function setState(s) {
+  state = s;
+  cams.sync(s.cameras);
+  render();
+}
+
+// ---------- rendering ----------
+function mediaThumb(item) {
+  if (item.type === 'video') {
+    return el('video', { src: item.url + '#t=0.5', muted: true, playsInline: true, preload: 'metadata' });
+  }
+  return el('img', { src: item.url, loading: 'lazy', alt: '' });
+}
+
+function nextIndex() {
+  if (!state) return 0;
+  const cur = state.program.kind === 'show' ? state.program.index : (state.lastShowIndex ?? -1);
+  return Math.min(cur + 1, library.show.length - 1);
+}
+
+function renderGrid() {
+  const grid = $('#grid');
+  grid.replaceChildren();
+  grid.classList.toggle('editing', editing);
+  if (!library.show.length) {
+    grid.append(el('div', { class: 'empty', style: 'grid-column:1/-1' },
+      'No slides yet. Tap “Add slides / videos”, or drop files into the media/show folder on the laptop. ',
+      'Tip: export your PowerPoint/Keynote/Canva deck as images (PNG/JPG).'));
+    return;
+  }
+  library.show.forEach((item, i) => {
+    const t = el('div', { class: 'thumb' }, mediaThumb(item),
+      el('span', { class: 'num' }, String(i + 1)),
+      item.type === 'video' ? el('span', { class: 'badge r' }, '▶ VIDEO') : null);
+    const card = el('div', { class: 'item', 'data-i': i,
+      onclick: (e) => { if (!editing && !e.target.closest('.edit')) link.cmd('take', { index: i }); } },
+      t, el('div', { class: 'caption' }, item.name),
+      el('div', { class: 'edit' },
+        el('button', { onclick: () => move(i, -1) }, '◀'),
+        el('button', { onclick: () => move(i, 1) }, '▶'),
+        el('button', { class: 'danger', onclick: () => del(item) }, '🗑')));
+    grid.append(card);
+  });
+  render();
+}
+
+function render() {
+  if (!state) return;
+  const p = state.program;
+  // Highlight live + next in rundown
+  const ni = nextIndex();
+  document.querySelectorAll('#grid .item').forEach((card) => {
+    const i = Number(card.dataset.i);
+    const t = card.querySelector('.thumb');
+    const live = p.kind === 'show' && p.index === i;
+    const next = !live && i === ni;
+    t.classList.toggle('live', live);
+    t.classList.toggle('next', next);
+    t.querySelector('.badge.live, .badge.next')?.remove();
+    if (live) t.append(el('span', { class: 'badge live' }, 'LIVE'));
+    else if (next) t.append(el('span', { class: 'badge next' }, 'NEXT'));
+  });
+
+  // Live preview
+  const lt = $('#liveThumb');
+  const name = $('#liveName');
+  const liveKey = p.kind === 'show' ? 'show:' + p.name : p.kind === 'camera' ? 'cam:' + p.id + ':' + camStreams.has(p.id) : 'black';
+  if (lt.dataset.key !== liveKey) {
+    lt.dataset.key = liveKey;
+    lt.querySelectorAll('img,video').forEach((x) => x.remove());
+    if (p.kind === 'show' && library.show[p.index]) {
+      lt.prepend(mediaThumb(library.show[p.index]));
+    } else if (p.kind === 'camera' && camStreams.get(p.id)) {
+      lt.prepend(el('video', { srcObject: camStreams.get(p.id), muted: true, autoplay: true, playsInline: true }));
+    }
+  }
+  name.classList.remove('black');
+  if (p.kind === 'show' && library.show[p.index]) {
+    name.textContent = `${p.index + 1}. ${library.show[p.index].name}`;
+  } else if (p.kind === 'camera') {
+    name.textContent = '🎥 ' + (state.cameras.find((c) => c.id === p.id)?.name || 'Camera');
+  } else {
+    name.textContent = 'Black screen'; name.classList.add('black');
+  }
+
+  // Transition + options
+  document.querySelectorAll('#trans button').forEach((b) => b.classList.toggle('on', b.dataset.v === state.transition));
+  $('#oAuto').checked = state.video.autoplay;
+  $('#oLoop').checked = state.video.loop;
+  $('#oNext').checked = state.video.autoNext;
+  if (document.activeElement !== $('#vVol')) $('#vVol').value = state.video.volume;
+
+  // Screen status
+  const scr = $('#scr');
+  const warn = $('#warn');
+  if (!state.screens) {
+    scr.className = 'chip bad'; scr.textContent = 'Screen offline';
+    warn.className = 'show'; warn.textContent = 'The audience screen isn’t open. On the laptop, open /screen in Chrome.';
+  } else if (!state.screenReady) {
+    scr.className = 'chip warn'; scr.textContent = 'Screen not started';
+    warn.className = 'show'; warn.textContent = 'Audience screen is open but not started — click once on the laptop screen to turn on sound & full screen.';
+  } else {
+    scr.className = 'chip ok'; scr.textContent = 'Screen live'; warn.className = '';
+  }
+  renderCams();
+  renderVideo();
+}
+
+function renderCams() {
+  const box = $('#cams');
+  if (!state) return;
+  const ids = state.cameras.map((c) => c.id + c.name).join() + [...camStreams.keys()].join();
+  if (box.dataset.ids !== ids) {
+    box.dataset.ids = ids;
+    box.replaceChildren();
+    if (!state.cameras.length) {
+      box.append(el('div', { class: 'empty', style: 'grid-column:1/-1' },
+        'No cameras connected. On a phone, open the camera link from the laptop’s start page (scan the QR code).'));
+    }
+    for (const c of state.cameras) {
+      const s = camStreams.get(c.id);
+      const t = el('div', { class: 'thumb', 'data-id': c.id },
+        s ? el('video', { srcObject: s, muted: true, autoplay: true, playsInline: true }) : 'connecting…');
+      box.append(el('div', { class: 'cam', onclick: () => link.cmd('camera', { id: c.id }) },
+        t, el('div', { class: 'caption' }, '🎥 ' + c.name)));
+    }
+  }
+  box.querySelectorAll('.thumb').forEach((t) => {
+    const live = state.program.kind === 'camera' && state.program.id === t.dataset.id;
+    t.classList.toggle('live', live);
+    t.querySelector('.badge')?.remove();
+    if (live) t.append(el('span', { class: 'badge live' }, 'LIVE'));
+  });
+}
+
+let seeking = false;
+function renderVideo() {
+  const v = vstatus;
+  const on = !!v.name;
+  $('#videoPanel').style.opacity = on ? 1 : 0.55;
+  $('#vName').textContent = on ? v.name : 'No video on screen';
+  $('#vPlay').textContent = on && !v.paused ? '⏸' : '▶';
+  $('#vCur').textContent = fmtTime(on ? v.time : 0);
+  $('#vRem').textContent = '-' + fmtTime(on ? v.duration - v.time : 0);
+  if (!seeking) $('#vSeek').value = on && v.duration ? (v.time / v.duration) * 1000 : 0;
+}
+
+// ---------- actions ----------
+$('#next').onclick = () => link.cmd('next');
+$('#prev').onclick = () => link.cmd('prev');
+$('#blackBtn').onclick = () => link.cmd('black');
+document.querySelectorAll('#trans button').forEach((b) => (b.onclick = () => link.cmd('transition', { value: b.dataset.v })));
+document.querySelectorAll('.transport button').forEach((b) => (b.onclick = () => {
+  const op = b.dataset.op;
+  if (op === 'back') link.cmd('video', { op: 'skip', value: -10 });
+  else if (op === 'fwd') link.cmd('video', { op: 'skip', value: 10 });
+  else link.cmd('video', { op });
+}));
+const seek = $('#vSeek');
+seek.addEventListener('input', () => {
+  seeking = true;
+  $('#vCur').textContent = fmtTime((seek.value / 1000) * (vstatus.duration || 0));
+});
+seek.addEventListener('change', () => {
+  link.cmd('video', { op: 'seek', value: (seek.value / 1000) * (vstatus.duration || 0) });
+  seeking = false;
+});
+$('#vVol').addEventListener('input', (e) => link.cmd('videoOpt', { volume: Number(e.target.value) }));
+$('#oAuto').onchange = (e) => link.cmd('videoOpt', { autoplay: e.target.checked });
+$('#oLoop').onchange = (e) => link.cmd('videoOpt', { loop: e.target.checked });
+$('#oNext').onchange = (e) => link.cmd('videoOpt', { autoNext: e.target.checked });
+
+$('#uploadBtn').onclick = () => $('#file').click();
+$('#file').onchange = async (e) => {
+  await uploadFiles('show', [...e.target.files], (s) => ($('#upStatus').textContent = s));
+  e.target.value = '';
+};
+$('#editBtn').onclick = () => {
+  editing = !editing;
+  $('#editBtn').classList.toggle('on', editing);
+  $('#editBtn').textContent = editing ? 'Done' : 'Reorder / delete';
+  renderGrid();
+};
+function move(i, d) {
+  const names = library.show.map((x) => x.name);
+  const j = i + d;
+  if (j < 0 || j >= names.length) return;
+  [names[i], names[j]] = [names[j], names[i]];
+  link.cmd('reorder', { order: names });
+}
+async function del(item) {
+  if (!confirm(`Delete “${item.name}” from the show?`)) return;
+  await fetch(`/api/delete?kind=show&name=${encodeURIComponent(item.name)}`, { method: 'POST' });
+}
+
+// Keep the iPad awake
+async function wake() { try { await navigator.wakeLock?.request('screen'); } catch {} }
+wake(); document.addEventListener('visibilitychange', () => document.visibilityState === 'visible' && wake());
+</script>
+</body>
+</html>

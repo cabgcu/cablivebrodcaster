@@ -1,0 +1,331 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Canyon Night — Audience Screen</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #000; overflow: hidden; cursor: none; }
+  body.cursor { cursor: default; }
+  #stage { position: fixed; inset: 0; }
+  .layer {
+    position: absolute; inset: 0; width: 100%; height: 100%;
+    object-fit: contain; opacity: 0; visibility: hidden; background: #000;
+    transition: opacity var(--fade, 0ms) ease, visibility 0s linear var(--fade, 0ms);
+  }
+  .layer.on { opacity: 1; visibility: visible; z-index: 2; transition: opacity var(--fade, 0ms) ease, visibility 0s; }
+  .layer.leaving { z-index: 1; }
+  #start {
+    position: fixed; inset: 0; z-index: 10; display: grid; place-items: center;
+    background: radial-gradient(circle at 50% 40%, #2b1a10, #000 70%); color: #fff;
+    font: 600 20px/1.4 system-ui, sans-serif; text-align: center; cursor: pointer;
+  }
+  #start h1 { font-size: 44px; margin: 0 0 8px; letter-spacing: .04em; color: #ffb35c; }
+  #start p { margin: 6px 0; opacity: .8; font-weight: 400; }
+  #start kbd { background: #222; border: 1px solid #444; border-radius: 4px; padding: 1px 6px; }
+  #hud {
+    position: fixed; left: 12px; bottom: 12px; z-index: 9; color: #fff; opacity: 0;
+    font: 13px system-ui, sans-serif; background: #000a; padding: 6px 10px; border-radius: 6px;
+    transition: opacity .3s; pointer-events: none;
+  }
+  body.cursor #hud { opacity: 1; }
+  #offline { position: fixed; top: 10px; right: 10px; width: 10px; height: 10px; border-radius: 50%;
+    background: #e33; z-index: 9; display: none; }
+  body.offline #offline { display: block; }
+</style>
+</head>
+<body class="offline">
+<div id="stage"></div>
+<div id="offline" title="Not connected to show server"></div>
+<div id="hud"></div>
+<div id="start">
+  <div>
+    <h1>CANYON NIGHT LIVE</h1>
+    <p><b>Click anywhere to start the audience screen</b></p>
+    <p>This turns on sound and goes full screen.</p>
+    <p style="margin-top:24px;font-size:15px">Laptop backup keys: <kbd>→</kbd>/<kbd>Space</kbd> next &nbsp;
+      <kbd>←</kbd> back &nbsp; <kbd>B</kbd> black &nbsp; <kbd>F</kbd> full screen</p>
+  </div>
+</div>
+
+<script type="module">
+import { connect, CameraViewer, $ } from './common.js';
+
+const stage = $('#stage');
+let library = { show: [], sounds: [] };
+let state = null;
+const layers = new Map(); // key -> element. keys: 'show:<name>', 'cam:<id>'
+let activeKey = null;
+let lastTakeAt = null;
+
+// ---------------- link ----------------
+const link = connect('screen', {
+  onStatus: (up) => {
+    document.body.classList.toggle('offline', !up);
+    if (up && audioReady) link.send({ t: 'ready', value: true });
+  },
+  onMessage: (m) => {
+    if (m.t === 'welcome') { cams.reset(); setLibrary(m.library); setState(m.state); }
+    else if (m.t === 'library') setLibrary(m.library);
+    else if (m.t === 'state') setState(m.state);
+    else if (m.t === 'video') videoOp(m.op, m.value);
+    else if (m.t === 'sfx') sfxOp(m.op, m.name);
+    else if (m.t === 'signal') cams.handleSignal(m.from, m.data);
+    else if (m.t === 'peer-left') cams.drop(m.id);
+  },
+});
+
+// ---------------- cameras ----------------
+const cams = new CameraViewer(link, {
+  quality: 'high',
+  onStream: (id, stream) => {
+    const v = layerFor('cam:' + id, () => {
+      const v = document.createElement('video');
+      v.muted = true; v.playsInline = true; v.autoplay = true;
+      return v;
+    });
+    v.srcObject = stream;
+    v.play().catch(() => {});
+  },
+  onGone: (id) => removeLayer('cam:' + id),
+});
+
+// ---------------- layers ----------------
+function layerFor(key, make) {
+  let e = layers.get(key);
+  if (!e) {
+    e = make();
+    e.classList.add('layer');
+    e.dataset.key = key;
+    stage.append(e);
+    layers.set(key, e);
+  }
+  return e;
+}
+function removeLayer(key) {
+  const e = layers.get(key);
+  if (!e) return;
+  if (e.tagName === 'VIDEO') { e.pause(); e.removeAttribute('src'); e.srcObject = null; e.load?.(); }
+  e.remove();
+  layers.delete(key);
+  if (activeKey === key) activeKey = null;
+}
+
+function setLibrary(lib) {
+  library = lib;
+  const keep = new Set();
+  for (const item of lib.show) {
+    const key = 'show:' + item.name;
+    keep.add(key);
+    const e = layerFor(key, () => {
+      if (item.type === 'video') {
+        const v = document.createElement('video');
+        v.preload = 'auto'; v.playsInline = true; v.src = item.url;
+        v.addEventListener('ended', reportVideo);
+        return v;
+      }
+      const img = new Image();
+      img.decoding = 'async'; img.src = item.url;
+      return img;
+    });
+    e.dataset.url = item.url;
+  }
+  for (const key of [...layers.keys()]) if (key.startsWith('show:') && !keep.has(key)) removeLayer(key);
+  loadSounds(lib.sounds);
+  if (state) render();
+}
+
+function setState(s) {
+  state = s;
+  cams.sync(s.cameras);
+  render();
+}
+
+function render() {
+  const p = state.program;
+  document.documentElement.style.setProperty('--fade', state.transition === 'fade' ? '600ms' : '0ms');
+  let key = null;
+  if (p.kind === 'show') key = 'show:' + p.name;
+  else if (p.kind === 'camera') key = 'cam:' + p.id;
+
+  // Apply live video settings
+  for (const [k, e] of layers) {
+    if (e.tagName === 'VIDEO' && k.startsWith('show:')) {
+      e.volume = state.video.volume;
+      e.loop = state.video.loop;
+    }
+  }
+
+  const next = key && layers.get(key);
+  const isNewTake = p.at && p.at !== lastTakeAt;
+  lastTakeAt = p.at;
+
+  if (key !== activeKey || isNewTake) {
+    const prev = activeKey && layers.get(activeKey);
+    if (prev && prev !== next) {
+      prev.classList.remove('on');
+      prev.classList.add('leaving');
+      const delay = state.transition === 'fade' ? 650 : 0;
+      setTimeout(() => {
+        prev.classList.remove('leaving');
+        if (prev.tagName === 'VIDEO' && !prev.srcObject && !prev.classList.contains('on')) prev.pause();
+      }, delay);
+    }
+    if (next) {
+      next.classList.add('on');
+      if (next.tagName === 'VIDEO' && !next.srcObject && (isNewTake || prev !== next)) {
+        next.currentTime = 0;
+        if (state.video.autoplay) next.play().catch(() => {});
+      }
+    }
+    activeKey = next ? key : null;
+    reportVideo();
+  }
+  document.getElementById('hud').textContent =
+    `${state.screens} screen · ${state.cameras.length} camera(s) · live: ` +
+    (p.kind === 'show' ? p.name : p.kind === 'camera' ? (state.cameras.find(c => c.id === p.id)?.name || 'camera') : 'black');
+}
+
+// ---------------- video transport ----------------
+function liveVideo() {
+  const e = activeKey && layers.get(activeKey);
+  return e && e.tagName === 'VIDEO' && !e.srcObject ? e : null;
+}
+function videoOp(op, value) {
+  const v = liveVideo();
+  if (!v) return;
+  if (op === 'play') v.play().catch(() => {});
+  else if (op === 'pause') v.pause();
+  else if (op === 'toggle') v.paused ? v.play().catch(() => {}) : v.pause();
+  else if (op === 'restart') { v.currentTime = 0; v.play().catch(() => {}); }
+  else if (op === 'seek') v.currentTime = Math.max(0, Math.min(v.duration || 0, Number(value)));
+  else if (op === 'skip') v.currentTime = Math.max(0, Math.min(v.duration || 0, v.currentTime + Number(value)));
+  reportVideo();
+}
+let lastReport = '';
+function reportVideo() {
+  const v = liveVideo();
+  const msg = v
+    ? { t: 'vstatus', name: state.program.name, time: v.currentTime, duration: v.duration || 0, paused: v.paused, ended: v.ended }
+    : { t: 'vstatus', name: null };
+  const sig = JSON.stringify(msg);
+  if (sig !== lastReport) { lastReport = sig; link.send(msg); }
+}
+setInterval(reportVideo, 250);
+
+// ---------------- soundboard (Web Audio, low latency) ----------------
+let actx = null;
+let master = null;
+const buffers = new Map(); // url -> Promise<AudioBuffer>
+const playing = new Map(); // name -> {src, gain, start, dur}
+let soundList = [];
+
+function ensureAudio() {
+  if (!actx) {
+    actx = new (window.AudioContext || window.webkitAudioContext)({ latencyHint: 'interactive' });
+    master = actx.createGain();
+    master.connect(actx.destination);
+  }
+  return actx;
+}
+function loadSounds(list) {
+  soundList = list;
+  if (!actx) return;
+  for (const s of list) {
+    if (!buffers.has(s.url)) {
+      buffers.set(s.url, fetch(s.url).then(r => r.arrayBuffer()).then(b => actx.decodeAudioData(b))
+        .catch((e) => { console.warn('sound failed', s.name, e); buffers.delete(s.url); return null; }));
+    }
+  }
+}
+async function sfxOp(op, name) {
+  if (!actx) return;
+  if (op === 'stopAll') { for (const n of [...playing.keys()]) stopSound(n, 0.05); return; }
+  if (op === 'fadeAll') { for (const n of [...playing.keys()]) stopSound(n, 1.5); return; }
+  if (op === 'stop') return stopSound(name, 0.05);
+  if (op === 'toggle' && playing.has(name)) return stopSound(name, 0.05);
+  // play / retrigger
+  const s = soundList.find(x => x.name === name);
+  if (!s) return;
+  const buf = await buffers.get(s.url);
+  if (!buf) return;
+  if (playing.has(name)) stopSound(name, 0.02);
+  const src = actx.createBufferSource();
+  src.buffer = buf;
+  src.loop = !!s.loop;
+  const gain = actx.createGain();
+  gain.gain.value = s.vol ?? 1;
+  src.connect(gain).connect(master);
+  const entry = { src, gain, start: actx.currentTime, dur: buf.duration, loop: src.loop };
+  src.onended = () => { if (playing.get(name) === entry) playing.delete(name); };
+  playing.set(name, entry);
+  src.start();
+}
+function stopSound(name, fade) {
+  const e = playing.get(name);
+  if (!e) return;
+  playing.delete(name);
+  const t = actx.currentTime;
+  e.gain.gain.cancelScheduledValues(t);
+  e.gain.gain.setValueAtTime(e.gain.gain.value, t);
+  e.gain.gain.linearRampToValueAtTime(0, t + fade);
+  e.src.stop(t + fade + 0.02);
+}
+let lastSfx = '';
+setInterval(() => {
+  if (!actx) return;
+  if (state) master.gain.value = state.master;
+  // keep per-pad volume in sync with soundboard edits
+  for (const [name, e] of playing) {
+    const s = soundList.find(x => x.name === name);
+    if (s && e.gain.gain.value !== s.vol && !e.fading) e.gain.gain.value = s.vol;
+    if (s) e.src.loop = !!s.loop;
+  }
+  const list = [...playing].map(([name, e]) => {
+    const el = actx.currentTime - e.start;
+    return { name, pos: e.dur ? (e.loop ? el % e.dur : Math.min(el, e.dur)) : 0, dur: e.dur };
+  });
+  const sig = JSON.stringify(list.map(x => x.name));
+  if (list.length || sig !== lastSfx) link.send({ t: 'sfxstatus', playing: list });
+  lastSfx = sig;
+}, 120);
+
+// ---------------- start / unlock ----------------
+let audioReady = false;
+function start() {
+  ensureAudio().resume();
+  loadSounds(soundList);
+  audioReady = true;
+  $('#start').remove();
+  link.send({ t: 'ready', value: true });
+  document.documentElement.requestFullscreen?.().catch(() => {});
+  // Unlock video sound on every video element.
+  for (const e of layers.values()) if (e.tagName === 'VIDEO' && !e.srcObject) e.muted = false;
+  const v = liveVideo();
+  if (v && v.paused && state?.video.autoplay) v.play().catch(() => {});
+}
+$('#start').addEventListener('click', start);
+
+// Laptop keyboard / presentation clicker backup controls
+addEventListener('keydown', (e) => {
+  if (!audioReady && (e.key === 'Enter' || e.key === ' ')) return start();
+  const k = e.key;
+  if (['ArrowRight', 'PageDown', ' ', 'ArrowDown'].includes(k)) { link.cmd('next'); e.preventDefault(); }
+  else if (['ArrowLeft', 'PageUp', 'ArrowUp'].includes(k)) { link.cmd('prev'); e.preventDefault(); }
+  else if (k === 'b' || k === 'B' || k === '.') link.cmd('black');
+  else if (k === 'f' || k === 'F') document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen();
+  else if (k === 'k' || k === 'K') videoOp('toggle');
+});
+
+let cursorTimer;
+addEventListener('mousemove', () => {
+  document.body.classList.add('cursor');
+  clearTimeout(cursorTimer);
+  cursorTimer = setTimeout(() => document.body.classList.remove('cursor'), 2000);
+});
+// Keep the laptop display awake during the show.
+async function wake() { try { await navigator.wakeLock?.request('screen'); } catch {} }
+wake(); document.addEventListener('visibilitychange', () => document.visibilityState === 'visible' && wake());
+</script>
+</body>
+</html>

@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<title>Canyon Night — Soundboard</title>
+<link rel="stylesheet" href="/style.css">
+<style>
+  main { padding: 12px; display: grid; gap: 12px; }
+  .top { display: grid; grid-template-columns: 1fr auto auto; gap: 12px; align-items: center; }
+  .master { display: flex; align-items: center; gap: 12px; color: var(--dim); font-size: 14px; }
+  .master input { max-width: 420px; }
+  #stopAll { background: #5a1410; border-color: #a3261d; font-weight: 800; font-size: 18px; padding: 16px 22px; }
+  #fadeAll { font-weight: 700; padding: 16px 18px; }
+  .pads { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 12px; }
+  .pad {
+    position: relative; aspect-ratio: 1.25; border-radius: 18px; padding: 14px; overflow: hidden;
+    background: var(--c, #2b2622); border: 2px solid #ffffff14; color: #fff;
+    display: flex; flex-direction: column; justify-content: flex-end; text-align: left;
+    font-weight: 700; font-size: 19px; line-height: 1.15; cursor: pointer;
+    box-shadow: inset 0 -40px 60px #0005; touch-action: manipulation;
+  }
+  .pad .key { position: absolute; top: 10px; left: 12px; font-size: 12px; opacity: .6; font-weight: 600; }
+  .pad .meta { position: absolute; top: 10px; right: 12px; font-size: 12px; opacity: .8; font-weight: 600; }
+  .pad .prog { position: absolute; left: 0; bottom: 0; height: 6px; background: #fff; width: 0; }
+  .pad.playing { border-color: #fff; box-shadow: 0 0 0 3px #fff3, 0 0 28px var(--c, #fff6); animation: pulse 1s ease-in-out infinite alternate; }
+  @keyframes pulse { from { filter: brightness(1.05); } to { filter: brightness(1.35); } }
+  .pad:active { transform: scale(.97); }
+  .editor { display: none; position: absolute; inset: 0; background: #000d; padding: 10px; flex-direction: column; gap: 6px;
+    font-size: 13px; font-weight: 500; justify-content: center; }
+  .editing .editor { display: flex; }
+  .editor .row { display: flex; gap: 6px; align-items: center; }
+  .editor input[type=range] { height: 24px; }
+  .swatches { display: flex; gap: 4px; flex-wrap: wrap; }
+  .swatches span { width: 20px; height: 20px; border-radius: 50%; border: 2px solid #fff3; }
+  .editor button { padding: 6px 8px; font-size: 13px; border-radius: 8px; }
+  .mode { font-size: 13px; color: var(--dim); }
+</style>
+</head>
+<body>
+<header class="bar">
+  <h1>CANYON NIGHT · SOUNDBOARD</h1>
+  <span id="conn" class="chip bad">Server</span>
+  <span id="scr" class="chip bad">Screen</span>
+  <span class="grow"></span>
+  <button id="uploadBtn">＋ Add sounds</button>
+  <button id="editBtn">Edit pads</button>
+  <input type="file" id="file" multiple accept="audio/*" hidden>
+</header>
+<main>
+  <div class="top">
+    <div class="master">Master <input type="range" id="master" min="0" max="1" step="0.01"> <span id="mVal"></span></div>
+    <button id="fadeAll">Fade out all</button>
+    <button id="stopAll">■ STOP ALL</button>
+  </div>
+  <div class="mode">Tap a pad to play it on the laptop speakers. Tap again to stop. <span id="upStatus"></span></div>
+  <div class="pads" id="pads"></div>
+</main>
+
+<script type="module">
+import { connect, $, el, uploadFiles } from './common.js';
+
+const COLORS = ['#2b2622', '#b23a2e', '#c2611f', '#b38a12', '#3b8f3e', '#1f7a7a', '#2d5fb3', '#6b3fb3', '#a8327a'];
+const DEFAULT_COLORS = ['#b23a2e', '#c2611f', '#b38a12', '#3b8f3e', '#1f7a7a', '#2d5fb3', '#6b3fb3', '#a8327a'];
+let library = { show: [], sounds: [] };
+let state = null;
+let editing = false;
+let playing = new Map();
+
+const link = connect('sound', {
+  onStatus: (up) => { $('#conn').className = 'chip ' + (up ? 'ok' : 'bad'); $('#conn').textContent = up ? 'Server' : 'Server offline'; },
+  onMessage: (m) => {
+    if (m.t === 'welcome') { library = m.library; state = m.state; renderPads(); renderState(); }
+    else if (m.t === 'library') { library = m.library; renderPads(); }
+    else if (m.t === 'state') { state = m.state; renderState(); }
+    else if (m.t === 'sfxstatus') { playing = new Map(m.playing.map((p) => [p.name, p])); renderPlaying(); }
+  },
+});
+
+function renderState() {
+  const scr = $('#scr');
+  if (!state.screens) { scr.className = 'chip bad'; scr.textContent = 'Screen offline — no audio'; }
+  else if (!state.screenReady) { scr.className = 'chip warn'; scr.textContent = 'Click the laptop screen to enable audio'; }
+  else { scr.className = 'chip ok'; scr.textContent = 'Laptop audio ready'; }
+  if (document.activeElement !== $('#master')) $('#master').value = state.master;
+  $('#mVal').textContent = Math.round(state.master * 100) + '%';
+}
+
+function renderPads() {
+  const box = $('#pads');
+  box.replaceChildren();
+  box.classList.toggle('editing', editing);
+  if (!library.sounds.length) {
+    box.append(el('div', { class: 'empty', style: 'grid-column:1/-1' },
+      'No sounds yet. Tap “Add sounds” (MP3, WAV, M4A) or drop files into the media/sounds folder on the laptop.'));
+    return;
+  }
+  library.sounds.forEach((s, i) => {
+    const color = s.color || DEFAULT_COLORS[i % DEFAULT_COLORS.length];
+    const pad = el('div', { class: 'pad', style: `--c:${color}`, 'data-name': s.name,
+      onpointerdown: (e) => {
+        if (editing || e.target.closest('.editor')) return;
+        link.cmd('sfx', { op: 'toggle', name: s.name });
+      } },
+      el('span', { class: 'key' }, i < 9 ? String(i + 1) : ''),
+      el('span', { class: 'meta' }, s.loop ? '↻ loop' : ''),
+      s.label,
+      el('div', { class: 'prog' }),
+      el('div', { class: 'editor' },
+        el('div', { class: 'row' }, 'Vol', el('input', { type: 'range', min: 0, max: 1.5, step: 0.01, value: s.vol,
+          onchange: (e) => link.cmd('pad', { name: s.name, vol: Number(e.target.value) }) })),
+        el('label', { class: 'chk' }, el('input', { type: 'checkbox', checked: !!s.loop,
+          onchange: (e) => link.cmd('pad', { name: s.name, loop: e.target.checked }) }), 'Loop'),
+        el('div', { class: 'swatches' }, COLORS.map((c) => el('span', { style: `background:${c}`,
+          onclick: () => link.cmd('pad', { name: s.name, color: c }) }))),
+        el('div', { class: 'row' },
+          el('button', { onclick: () => link.cmd('sfx', { op: 'play', name: s.name }) }, '▶ Test'),
+          el('button', { class: 'danger', onclick: () => del(s) }, '🗑'))));
+    box.append(pad);
+  });
+  renderPlaying();
+}
+
+function renderPlaying() {
+  document.querySelectorAll('.pad').forEach((p) => {
+    const st = playing.get(p.dataset.name);
+    p.classList.toggle('playing', !!st);
+    p.querySelector('.prog').style.width = st && st.dur ? (st.pos / st.dur) * 100 + '%' : '0';
+  });
+}
+
+$('#master').addEventListener('input', (e) => {
+  $('#mVal').textContent = Math.round(e.target.value * 100) + '%';
+  link.cmd('master', { value: Number(e.target.value) });
+});
+$('#stopAll').onclick = () => link.cmd('sfx', { op: 'stopAll' });
+$('#fadeAll').onclick = () => link.cmd('sfx', { op: 'fadeAll' });
+$('#uploadBtn').onclick = () => $('#file').click();
+$('#file').onchange = async (e) => {
+  await uploadFiles('sounds', [...e.target.files], (s) => ($('#upStatus').textContent = s));
+  e.target.value = '';
+};
+$('#editBtn').onclick = () => {
+  editing = !editing;
+  $('#editBtn').classList.toggle('on', editing);
+  $('#editBtn').textContent = editing ? 'Done' : 'Edit pads';
+  renderPads();
+};
+async function del(s) {
+  if (!confirm(`Delete sound “${s.label}”?`)) return;
+  await fetch(`/api/delete?kind=sounds&name=${encodeURIComponent(s.name)}`, { method: 'POST' });
+}
+// Keyboard: 1-9 trigger pads, Esc stops all (handy with a Bluetooth keyboard)
+addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') return link.cmd('sfx', { op: 'stopAll' });
+  const n = Number(e.key);
+  if (n >= 1 && n <= 9 && library.sounds[n - 1]) link.cmd('sfx', { op: 'toggle', name: library.sounds[n - 1].name });
+});
+async function wake() { try { await navigator.wakeLock?.request('screen'); } catch {} }
+wake(); document.addEventListener('visibilitychange', () => document.visibilityState === 'visible' && wake());
+</script>
+</body>
+</html>

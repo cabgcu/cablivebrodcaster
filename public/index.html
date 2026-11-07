@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Canyon Night Live</title>
+<link rel="stylesheet" href="/style.css">
+<style>
+  body { -webkit-user-select: text; user-select: text; }
+  main { max-width: 1100px; margin: 0 auto; padding: 20px 16px 40px; }
+  h2.title { font-size: 34px; margin: 10px 0 4px; color: var(--accent); letter-spacing: .04em; }
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; margin-top: 20px; }
+  .card { display: grid; gap: 10px; align-content: start; }
+  .card h3 { margin: 0; font-size: 18px; }
+  .card .who { font-size: 13px; color: var(--accent); font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+  .card img { width: 100%; max-width: 200px; background: #fff; border-radius: 10px; padding: 6px; justify-self: center; }
+  .card a.url { color: var(--text); word-break: break-all; font-size: 14px; font-family: ui-monospace, Menlo, monospace; }
+  .card a.btn { text-align: center; text-decoration: none; background: var(--accent); color: #111; font-weight: 700;
+    padding: 12px; border-radius: 12px; }
+  .steps { margin-top: 24px; } .steps li { margin: 6px 0; color: var(--dim); } .steps b { color: var(--text); }
+  select { margin-left: 6px; }
+</style>
+</head>
+<body>
+<main>
+  <h2 class="title">CANYON NIGHT LIVE</h2>
+  <div class="muted">Show control. Every device must be on the <b>same Wi-Fi</b> as this laptop.
+    <span id="ipPick"></span></div>
+
+  <div class="cards" id="cards"></div>
+
+  <div class="panel steps">
+    <h2>Show-day checklist</h2>
+    <ol>
+      <li><b>Laptop:</b> connect the projector/TV, drag a Chrome window onto it and open <b>Audience screen</b>. Click once to turn on sound and go full screen. Audio plays from the laptop’s output.</li>
+      <li><b>iPad 1:</b> scan the <b>Show control</b> code. Use Share → “Add to Home Screen” to get a full-screen app.</li>
+      <li><b>iPad 2:</b> scan the <b>Soundboard</b> code.</li>
+      <li><b>Phones:</b> scan the <b>Live camera</b> code. The first time, Safari will warn about the certificate: tap <i>Show Details → visit this website</i>. Then allow camera access.</li>
+      <li>Turn off Auto-Lock on the camera phones (Settings → Display &amp; Brightness), or plug them in. If a phone locks, its camera feed stops.</li>
+    </ol>
+  </div>
+</main>
+<script type="module">
+import { $, el } from './common.js';
+const info = await (await fetch('/api/info')).json();
+let ip = info.ips[0] || location.hostname;
+if (location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') ip = location.hostname;
+
+function render() {
+  const http = `http://${ip}:${info.httpPort}`;
+  const https = `https://${ip}:${info.httpsPort}`;
+  const cards = [
+    { who: 'Laptop → projector', title: 'Audience screen', url: `http://localhost:${info.httpPort}/screen`, local: true,
+      note: 'Open on the show laptop. Slides, videos, cameras and all sound come out here.' },
+    { who: 'iPad 1', title: 'Show control', url: `${http}/control`, note: 'Slides, videos, cutting to cameras.' },
+    { who: 'iPad 2', title: 'Soundboard', url: `${http}/sound`, note: 'Sound effects play through the laptop.' },
+    { who: 'Phones', title: 'Live camera', url: `${https}/camera`, note: 'Each phone becomes a camera the show controller can cut to.' },
+  ];
+  $('#cards').replaceChildren(...cards.map((c) => el('div', { class: 'panel card' },
+    el('div', { class: 'who' }, c.who),
+    el('h3', {}, c.title),
+    c.local ? null : el('img', { src: '/api/qr?text=' + encodeURIComponent(c.url), alt: 'QR code' }),
+    el('a', { class: 'url', href: c.url }, c.url),
+    el('div', { class: 'muted', style: 'font-size:14px' }, c.note),
+    el('a', { class: 'btn', href: c.url }, 'Open'))));
+}
+if (info.ips.length > 1) {
+  const s = el('select', { onchange: (e) => { ip = e.target.value; render(); } },
+    info.ips.map((x) => el('option', { value: x, selected: x === ip }, x)));
+  $('#ipPick').append(' Network address:', s);
+}
+render();
+</script>
+</body>
+</html>
