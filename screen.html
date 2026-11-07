@@ -49,31 +49,67 @@
 </div>
 
 <script type="module">
-import { connect, CameraViewer, $ } from './common.js';
+import { connect, CameraViewer, summarize, loadLibrary, loadSettings, saveSettings, DEFAULT_STATE, $, wakeLock } from './common.js';
 
 const stage = $('#stage');
 let library = { show: [], sounds: [] };
-let state = null;
+let state = structuredClone(DEFAULT_STATE);
+let room = summarize([]);
 const layers = new Map(); // key -> element. keys: 'show:<name>', 'cam:<id>'
 let activeKey = null;
 let lastTakeAt = null;
 
-// ---------------- link ----------------
+// ---------------- room ----------------
 const link = connect('screen', {
-  onStatus: (up) => {
-    document.body.classList.toggle('offline', !up);
-    if (up && audioReady) link.send({ t: 'ready', value: true });
-  },
+  meta: { ready: false, cached: '' },
+  onStatus: (up) => document.body.classList.toggle('offline', !up),
   onMessage: (m) => {
-    if (m.t === 'welcome') { cams.reset(); setLibrary(m.library); setState(m.state); }
-    else if (m.t === 'library') setLibrary(m.library);
-    else if (m.t === 'state') setState(m.state);
-    else if (m.t === 'video') videoOp(m.op, m.value);
-    else if (m.t === 'sfx') sfxOp(m.op, m.name);
+    if (m.t === 'cmd') command(m);
+    else if (m.t === 'getstate') link.send({ t: 'state', to: m.from, state });
+    else if (m.t === 'library') refreshLibrary();
     else if (m.t === 'signal') cams.handleSignal(m.from, m.data);
-    else if (m.t === 'peer-left') cams.drop(m.id);
   },
+  onPeers: (peers) => {
+    room = summarize(peers);
+    cams.sync(room.cameras);
+    if (state.program.kind === 'camera' && !room.cameras.find((c) => c.id === state.program.id)) {
+      state.program = { kind: 'black' }; // camera dropped while live: go to black, not a frozen frame
+      changed();
+    }
+    render();
+  },
+  onPeerLeft: (id) => cams.drop(id, true),
 });
+
+// The screen is the source of truth for what's live. Apply commands from the iPads.
+function take(index) {
+  const item = library.show[index];
+  if (item) state.program = { kind: 'show', index, name: item.name, at: Date.now() };
+}
+function command(m) {
+  switch (m.action) {
+    case 'take': take(m.index); break;
+    case 'next': take(Math.min((state.program.kind === 'show' ? state.program.index : state.lastShowIndex ?? -1) + 1, library.show.length - 1)); break;
+    case 'prev': take(Math.max((state.program.kind === 'show' ? state.program.index : state.lastShowIndex ?? 1) - 1, 0)); break;
+    case 'black': state.program = { kind: 'black' }; break;
+    case 'camera': if (room.cameras.find((c) => c.id === m.id)) state.program = { kind: 'camera', id: m.id }; break;
+    case 'transition': state.transition = m.value === 'fade' ? 'fade' : 'cut'; break;
+    case 'videoOpt': for (const k of ['volume', 'loop', 'autoplay', 'autoNext']) if (k in m) state.video[k] = m[k]; break;
+    case 'master': state.master = Math.max(0, Math.min(1.5, Number(m.value))); break;
+    case 'video': return videoOp(m.op, m.value);
+    case 'sfx': return sfxOp(m.op, m.name);
+    default: return;
+  }
+  changed();
+}
+let saveTimer;
+function changed() {
+  if (state.program.kind === 'show') state.lastShowIndex = state.program.index;
+  render();
+  link.send({ t: 'state', state });
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => saveSettings('live', state).catch(() => {}), 800);
+}
 
 // ---------------- cameras ----------------
 const cams = new CameraViewer(link, {
@@ -86,6 +122,7 @@ const cams = new CameraViewer(link, {
     });
     v.srcObject = stream;
     v.play().catch(() => {});
+    render();
   },
   onGone: (id) => removeLayer('cam:' + id),
 });
@@ -105,40 +142,73 @@ function layerFor(key, make) {
 function removeLayer(key) {
   const e = layers.get(key);
   if (!e) return;
-  if (e.tagName === 'VIDEO') { e.pause(); e.removeAttribute('src'); e.srcObject = null; e.load?.(); }
+  if (e.tagName === 'VIDEO') { e.pause(); e.removeAttribute('src'); e.srcObject = null; }
   e.remove();
   layers.delete(key);
   if (activeKey === key) activeKey = null;
 }
 
-function setLibrary(lib) {
-  library = lib;
+// Download every slide/video into memory so the show never waits on the internet.
+const cache = new Map(); // url -> blob url
+const loading = new Set();
+async function cacheMedia(url) {
+  if (cache.has(url) || loading.has(url)) return;
+  loading.add(url);
+  try {
+    const r = await fetch(url);
+    if (!r.ok) throw new Error(r.status);
+    cache.set(url, URL.createObjectURL(await r.blob()));
+  } catch (e) { console.warn('preload failed', url, e); }
+  loading.delete(url);
+  applyCache();
+}
+function applyCache() {
+  let done = 0;
+  for (const item of library.show) {
+    const blob = cache.get(item.url);
+    if (!blob) continue;
+    done++;
+    const e = layers.get('show:' + item.name);
+    // Swap to the local copy, but never under a video that's on air.
+    if (e && e.dataset.local !== blob && !(e.tagName === 'VIDEO' && e.classList.contains('on'))) {
+      e.src = blob; e.dataset.local = blob;
+    }
+  }
+  const cached = `${done}/${library.show.length}`;
+  link.setMeta({ cached });
+  hud();
+}
+
+async function refreshLibrary() {
+  try { library = await loadLibrary(); }
+  catch (e) { console.error(e); hudMsg = 'Can’t load media: ' + (e.message || e); hud(); return; }
   const keep = new Set();
-  for (const item of lib.show) {
+  for (const item of library.show) {
     const key = 'show:' + item.name;
     keep.add(key);
     const e = layerFor(key, () => {
       if (item.type === 'video') {
         const v = document.createElement('video');
-        v.preload = 'auto'; v.playsInline = true; v.src = item.url;
+        v.preload = 'auto'; v.playsInline = true;
         v.addEventListener('ended', reportVideo);
         return v;
       }
       const img = new Image();
-      img.decoding = 'async'; img.src = item.url;
+      img.decoding = 'async';
       return img;
     });
-    e.dataset.url = item.url;
+    if (e.dataset.url !== item.url) { e.dataset.url = item.url; e.dataset.local = ''; e.src = cache.get(item.url) || item.url; }
+    cacheMedia(item.url);
   }
   for (const key of [...layers.keys()]) if (key.startsWith('show:') && !keep.has(key)) removeLayer(key);
-  loadSounds(lib.sounds);
-  if (state) render();
-}
-
-function setState(s) {
-  state = s;
-  cams.sync(s.cameras);
-  render();
+  // Keep the live item pointing at the same file if the order changed.
+  if (state.program.kind === 'show') {
+    const i = library.show.findIndex((s) => s.name === state.program.name);
+    if (i === -1) state.program = { kind: 'black' }; else state.program.index = i;
+  }
+  loadSounds(library.sounds);
+  applyCache();
+  changed();
 }
 
 function render() {
@@ -148,42 +218,43 @@ function render() {
   if (p.kind === 'show') key = 'show:' + p.name;
   else if (p.kind === 'camera') key = 'cam:' + p.id;
 
-  // Apply live video settings
   for (const [k, e] of layers) {
-    if (e.tagName === 'VIDEO' && k.startsWith('show:')) {
-      e.volume = state.video.volume;
-      e.loop = state.video.loop;
-    }
+    if (e.tagName === 'VIDEO' && k.startsWith('show:')) { e.volume = Math.min(1, state.video.volume); e.loop = state.video.loop; }
   }
+  if (master) master.gain.value = state.master;
 
   const next = key && layers.get(key);
   const isNewTake = p.at && p.at !== lastTakeAt;
   lastTakeAt = p.at;
 
-  if (key !== activeKey || isNewTake) {
+  if ((next ? key : null) !== activeKey || isNewTake) {
     const prev = activeKey && layers.get(activeKey);
     if (prev && prev !== next) {
       prev.classList.remove('on');
       prev.classList.add('leaving');
-      const delay = state.transition === 'fade' ? 650 : 0;
       setTimeout(() => {
         prev.classList.remove('leaving');
         if (prev.tagName === 'VIDEO' && !prev.srcObject && !prev.classList.contains('on')) prev.pause();
-      }, delay);
+      }, state.transition === 'fade' ? 650 : 0);
     }
     if (next) {
       next.classList.add('on');
       if (next.tagName === 'VIDEO' && !next.srcObject && (isNewTake || prev !== next)) {
         next.currentTime = 0;
-        if (state.video.autoplay) next.play().catch(() => {});
+        if (state.video.autoplay && audioReady) next.play().catch(() => {});
       }
     }
     activeKey = next ? key : null;
     reportVideo();
   }
-  document.getElementById('hud').textContent =
-    `${state.screens} screen · ${state.cameras.length} camera(s) · live: ` +
-    (p.kind === 'show' ? p.name : p.kind === 'camera' ? (state.cameras.find(c => c.id === p.id)?.name || 'camera') : 'black');
+  hud();
+}
+let hudMsg = '';
+function hud() {
+  const p = state.program;
+  $('#hud').textContent = (hudMsg ? hudMsg + ' · ' : '') +
+    `media ${library.show.filter((i) => cache.has(i.url)).length}/${library.show.length} loaded · ${room.cameras.length} camera(s) · live: ` +
+    (p.kind === 'show' ? p.name : p.kind === 'camera' ? (room.cameras.find((c) => c.id === p.id)?.name || 'camera') : 'black');
 }
 
 // ---------------- video transport ----------------
@@ -206,10 +277,13 @@ let lastReport = '';
 function reportVideo() {
   const v = liveVideo();
   const msg = v
-    ? { t: 'vstatus', name: state.program.name, time: v.currentTime, duration: v.duration || 0, paused: v.paused, ended: v.ended }
+    ? { t: 'vstatus', name: state.program.name, time: Math.round(v.currentTime * 10) / 10, duration: v.duration || 0, paused: v.paused, ended: v.ended }
     : { t: 'vstatus', name: null };
   const sig = JSON.stringify(msg);
-  if (sig !== lastReport) { lastReport = sig; link.send(msg); }
+  if (sig === lastReport) return;
+  lastReport = sig;
+  link.send(msg);
+  if (msg.ended && state.video.autoNext && !state.video.loop) command({ action: 'next' });
 }
 setInterval(reportVideo, 250);
 
@@ -224,6 +298,7 @@ function ensureAudio() {
   if (!actx) {
     actx = new (window.AudioContext || window.webkitAudioContext)({ latencyHint: 'interactive' });
     master = actx.createGain();
+    master.gain.value = state.master;
     master.connect(actx.destination);
   }
   return actx;
@@ -233,7 +308,7 @@ function loadSounds(list) {
   if (!actx) return;
   for (const s of list) {
     if (!buffers.has(s.url)) {
-      buffers.set(s.url, fetch(s.url).then(r => r.arrayBuffer()).then(b => actx.decodeAudioData(b))
+      buffers.set(s.url, fetch(s.url).then((r) => r.arrayBuffer()).then((b) => actx.decodeAudioData(b))
         .catch((e) => { console.warn('sound failed', s.name, e); buffers.delete(s.url); return null; }));
     }
   }
@@ -244,8 +319,7 @@ async function sfxOp(op, name) {
   if (op === 'fadeAll') { for (const n of [...playing.keys()]) stopSound(n, 1.5); return; }
   if (op === 'stop') return stopSound(name, 0.05);
   if (op === 'toggle' && playing.has(name)) return stopSound(name, 0.05);
-  // play / retrigger
-  const s = soundList.find(x => x.name === name);
+  const s = soundList.find((x) => x.name === name);
   if (!s) return;
   const buf = await buffers.get(s.url);
   if (!buf) return;
@@ -256,10 +330,11 @@ async function sfxOp(op, name) {
   const gain = actx.createGain();
   gain.gain.value = s.vol ?? 1;
   src.connect(gain).connect(master);
-  const entry = { src, gain, start: actx.currentTime, dur: buf.duration, loop: src.loop };
+  const entry = { src, gain, start: actx.currentTime, dur: buf.duration };
   src.onended = () => { if (playing.get(name) === entry) playing.delete(name); };
   playing.set(name, entry);
   src.start();
+  sendSfx();
 }
 function stopSound(name, fade) {
   const e = playing.get(name);
@@ -270,25 +345,24 @@ function stopSound(name, fade) {
   e.gain.gain.setValueAtTime(e.gain.gain.value, t);
   e.gain.gain.linearRampToValueAtTime(0, t + fade);
   e.src.stop(t + fade + 0.02);
+  sendSfx();
 }
 let lastSfx = '';
-setInterval(() => {
+function sendSfx() {
   if (!actx) return;
-  if (state) master.gain.value = state.master;
-  // keep per-pad volume in sync with soundboard edits
   for (const [name, e] of playing) {
-    const s = soundList.find(x => x.name === name);
-    if (s && e.gain.gain.value !== s.vol && !e.fading) e.gain.gain.value = s.vol;
-    if (s) e.src.loop = !!s.loop;
+    const s = soundList.find((x) => x.name === name);
+    if (s) { e.gain.gain.value = s.vol; e.src.loop = !!s.loop; }
   }
   const list = [...playing].map(([name, e]) => {
-    const el = actx.currentTime - e.start;
-    return { name, pos: e.dur ? (e.loop ? el % e.dur : Math.min(el, e.dur)) : 0, dur: e.dur };
+    const t = actx.currentTime - e.start;
+    return { name, pos: Math.round((e.src.loop ? t % e.dur : Math.min(t, e.dur)) * 10) / 10, dur: e.dur };
   });
-  const sig = JSON.stringify(list.map(x => x.name));
+  const sig = list.map((x) => x.name).join();
   if (list.length || sig !== lastSfx) link.send({ t: 'sfxstatus', playing: list });
   lastSfx = sig;
-}, 120);
+}
+setInterval(sendSfx, 250);
 
 // ---------------- start / unlock ----------------
 let audioReady = false;
@@ -297,12 +371,10 @@ function start() {
   loadSounds(soundList);
   audioReady = true;
   $('#start').remove();
-  link.send({ t: 'ready', value: true });
+  link.setMeta({ ready: true });
   document.documentElement.requestFullscreen?.().catch(() => {});
-  // Unlock video sound on every video element.
-  for (const e of layers.values()) if (e.tagName === 'VIDEO' && !e.srcObject) e.muted = false;
   const v = liveVideo();
-  if (v && v.paused && state?.video.autoplay) v.play().catch(() => {});
+  if (v && v.paused && state.video.autoplay) v.play().catch(() => {});
 }
 $('#start').addEventListener('click', start);
 
@@ -310,9 +382,9 @@ $('#start').addEventListener('click', start);
 addEventListener('keydown', (e) => {
   if (!audioReady && (e.key === 'Enter' || e.key === ' ')) return start();
   const k = e.key;
-  if (['ArrowRight', 'PageDown', ' ', 'ArrowDown'].includes(k)) { link.cmd('next'); e.preventDefault(); }
-  else if (['ArrowLeft', 'PageUp', 'ArrowUp'].includes(k)) { link.cmd('prev'); e.preventDefault(); }
-  else if (k === 'b' || k === 'B' || k === '.') link.cmd('black');
+  if (['ArrowRight', 'PageDown', ' ', 'ArrowDown'].includes(k)) { command({ action: 'next' }); e.preventDefault(); }
+  else if (['ArrowLeft', 'PageUp', 'ArrowUp'].includes(k)) { command({ action: 'prev' }); e.preventDefault(); }
+  else if (k === 'b' || k === 'B' || k === '.') command({ action: 'black' });
   else if (k === 'f' || k === 'F') document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen();
   else if (k === 'k' || k === 'K') videoOp('toggle');
 });
@@ -323,9 +395,16 @@ addEventListener('mousemove', () => {
   clearTimeout(cursorTimer);
   cursorTimer = setTimeout(() => document.body.classList.remove('cursor'), 2000);
 });
-// Keep the laptop display awake during the show.
-async function wake() { try { await navigator.wakeLock?.request('screen'); } catch {} }
-wake(); document.addEventListener('visibilitychange', () => document.visibilityState === 'visible' && wake());
+wakeLock();
+
+// Restore what was on screen before a reload, then load media.
+try {
+  const saved = await loadSettings('live');
+  state = { ...state, ...saved, video: { ...state.video, ...(saved.video || {}) } };
+} catch (e) { console.warn('could not restore state', e); }
+if (state.program.kind === 'camera') state.program = { kind: 'black' };
+lastTakeAt = state.program.at; // don't auto-restart a video on reload
+refreshLibrary();
 </script>
 </body>
 </html>

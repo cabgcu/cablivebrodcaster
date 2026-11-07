@@ -43,7 +43,7 @@
 <body>
 <header class="bar">
   <h1>CANYON NIGHT · SOUNDBOARD</h1>
-  <span id="conn" class="chip bad">Server</span>
+  <span id="conn" class="chip bad">Connecting…</span>
   <span id="scr" class="chip bad">Screen</span>
   <span class="grow"></span>
   <button id="uploadBtn">＋ Add sounds</button>
@@ -61,29 +61,52 @@
 </main>
 
 <script type="module">
-import { connect, $, el, uploadFiles } from './common.js';
+import { connect, summarize, loadLibrary, updateSettings, uploadFiles, removeFile, DEFAULT_STATE, $, el, wakeLock } from './common.js';
 
 const COLORS = ['#2b2622', '#b23a2e', '#c2611f', '#b38a12', '#3b8f3e', '#1f7a7a', '#2d5fb3', '#6b3fb3', '#a8327a'];
 const DEFAULT_COLORS = ['#b23a2e', '#c2611f', '#b38a12', '#3b8f3e', '#1f7a7a', '#2d5fb3', '#6b3fb3', '#a8327a'];
 let library = { show: [], sounds: [] };
-let state = null;
+let state = DEFAULT_STATE;
+let room = summarize([]);
 let editing = false;
 let playing = new Map();
 
 const link = connect('sound', {
-  onStatus: (up) => { $('#conn').className = 'chip ' + (up ? 'ok' : 'bad'); $('#conn').textContent = up ? 'Server' : 'Server offline'; },
+  onStatus: (up) => {
+    $('#conn').className = 'chip ' + (up ? 'ok' : 'bad'); $('#conn').textContent = up ? 'Online' : 'Offline';
+    if (up) link.send({ t: 'getstate' });
+  },
   onMessage: (m) => {
-    if (m.t === 'welcome') { library = m.library; state = m.state; renderPads(); renderState(); }
-    else if (m.t === 'library') { library = m.library; renderPads(); }
+    if (m.t === 'library') refreshLibrary();
     else if (m.t === 'state') { state = m.state; renderState(); }
     else if (m.t === 'sfxstatus') { playing = new Map(m.playing.map((p) => [p.name, p])); renderPlaying(); }
   },
+  onPeers: (peers) => {
+    const had = room.screens;
+    room = summarize(peers);
+    if (room.screens && !had) link.send({ t: 'getstate' });
+    renderState();
+  },
 });
+
+async function refreshLibrary() {
+  try { library = await loadLibrary(); $('#upStatus').textContent = ''; }
+  catch (e) { $('#upStatus').textContent = 'Can’t load sounds: ' + (e.message || e); }
+  renderPads();
+}
+
+// Save a pad setting for everyone (volume / loop / color).
+async function setPad(name, patch) {
+  const s = library.sounds.find((x) => x.name === name);
+  if (s) Object.assign(s, patch);
+  await updateSettings(link, (st) => { st.pads ||= {}; st.pads[name] = { ...(st.pads[name] || {}), ...patch }; });
+  renderPads();
+}
 
 function renderState() {
   const scr = $('#scr');
-  if (!state.screens) { scr.className = 'chip bad'; scr.textContent = 'Screen offline — no audio'; }
-  else if (!state.screenReady) { scr.className = 'chip warn'; scr.textContent = 'Click the laptop screen to enable audio'; }
+  if (!room.screens) { scr.className = 'chip bad'; scr.textContent = 'Screen offline — no audio'; }
+  else if (!room.screenReady) { scr.className = 'chip warn'; scr.textContent = 'Click the laptop screen to enable audio'; }
   else { scr.className = 'chip ok'; scr.textContent = 'Laptop audio ready'; }
   if (document.activeElement !== $('#master')) $('#master').value = state.master;
   $('#mVal').textContent = Math.round(state.master * 100) + '%';
@@ -95,7 +118,7 @@ function renderPads() {
   box.classList.toggle('editing', editing);
   if (!library.sounds.length) {
     box.append(el('div', { class: 'empty', style: 'grid-column:1/-1' },
-      'No sounds yet. Tap “Add sounds” (MP3, WAV, M4A) or drop files into the media/sounds folder on the laptop.'));
+      'No sounds yet. Tap “Add sounds” (MP3, WAV, M4A).'));
     return;
   }
   library.sounds.forEach((s, i) => {
@@ -111,11 +134,11 @@ function renderPads() {
       el('div', { class: 'prog' }),
       el('div', { class: 'editor' },
         el('div', { class: 'row' }, 'Vol', el('input', { type: 'range', min: 0, max: 1.5, step: 0.01, value: s.vol,
-          onchange: (e) => link.cmd('pad', { name: s.name, vol: Number(e.target.value) }) })),
+          onchange: (e) => setPad(s.name, { vol: Number(e.target.value) }) })),
         el('label', { class: 'chk' }, el('input', { type: 'checkbox', checked: !!s.loop,
-          onchange: (e) => link.cmd('pad', { name: s.name, loop: e.target.checked }) }), 'Loop'),
+          onchange: (e) => setPad(s.name, { loop: e.target.checked }) }), 'Loop'),
         el('div', { class: 'swatches' }, COLORS.map((c) => el('span', { style: `background:${c}`,
-          onclick: () => link.cmd('pad', { name: s.name, color: c }) }))),
+          onclick: () => setPad(s.name, { color: c }) }))),
         el('div', { class: 'row' },
           el('button', { onclick: () => link.cmd('sfx', { op: 'play', name: s.name }) }, '▶ Test'),
           el('button', { class: 'danger', onclick: () => del(s) }, '🗑'))));
@@ -140,8 +163,9 @@ $('#stopAll').onclick = () => link.cmd('sfx', { op: 'stopAll' });
 $('#fadeAll').onclick = () => link.cmd('sfx', { op: 'fadeAll' });
 $('#uploadBtn').onclick = () => $('#file').click();
 $('#file').onchange = async (e) => {
-  await uploadFiles('sounds', [...e.target.files], (s) => ($('#upStatus').textContent = s));
+  await uploadFiles(link, 'sounds', [...e.target.files], (s) => ($('#upStatus').textContent = s));
   e.target.value = '';
+  refreshLibrary();
 };
 $('#editBtn').onclick = () => {
   editing = !editing;
@@ -151,7 +175,8 @@ $('#editBtn').onclick = () => {
 };
 async function del(s) {
   if (!confirm(`Delete sound “${s.label}”?`)) return;
-  await fetch(`/api/delete?kind=sounds&name=${encodeURIComponent(s.name)}`, { method: 'POST' });
+  await removeFile(link, 'sounds', s.name);
+  refreshLibrary();
 }
 // Keyboard: 1-9 trigger pads, Esc stops all (handy with a Bluetooth keyboard)
 addEventListener('keydown', (e) => {
@@ -159,8 +184,9 @@ addEventListener('keydown', (e) => {
   const n = Number(e.key);
   if (n >= 1 && n <= 9 && library.sounds[n - 1]) link.cmd('sfx', { op: 'toggle', name: library.sounds[n - 1].name });
 });
-async function wake() { try { await navigator.wakeLock?.request('screen'); } catch {} }
-wake(); document.addEventListener('visibilitychange', () => document.visibilityState === 'visible' && wake());
+wakeLock();
+refreshLibrary();
+renderState();
 </script>
 </body>
 </html>

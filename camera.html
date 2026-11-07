@@ -29,7 +29,7 @@
 <body>
 <header class="bar">
   <h1>CANYON NIGHT · CAMERA</h1>
-  <span id="conn" class="chip bad">Server</span>
+  <span id="conn" class="chip bad">Not joined</span>
   <span id="viewers" class="chip">0 viewers</span>
 </header>
 <div id="view">
@@ -64,7 +64,7 @@
 </div>
 
 <script type="module">
-import { connect, RTC_CONFIG, $ } from './common.js';
+import { connect, RTC_CONFIG, $, wakeLock } from './common.js';
 
 const store = {
   get: (k, d) => { try { return localStorage.getItem(k) ?? d; } catch { return d; } },
@@ -94,7 +94,7 @@ async function start() {
   $('#err').textContent = '';
   if (!navigator.mediaDevices?.getUserMedia) {
     $('#err').textContent = location.protocol !== 'https:'
-      ? 'Camera needs the https:// link. Open the camera link from the laptop start page.'
+      ? 'Camera needs a secure https:// page. Open the Live camera link from the start page.'
       : 'This browser can’t access the camera.';
     return;
   }
@@ -116,21 +116,23 @@ async function start() {
   for (const { pc } of pcs.values()) for (const snd of pc.getSenders()) snd.replaceTrack(track);
   if (!link) {
     link = connect('camera', {
-      name,
-      onStatus: (up) => { $('#conn').className = 'chip ' + (up ? 'ok' : 'bad'); $('#conn').textContent = up ? 'Server' : 'Reconnecting…'; },
+      meta: { name },
+      onStatus: (up) => {
+        $('#conn').className = 'chip ' + (up ? 'ok' : 'bad'); $('#conn').textContent = up ? 'Online' : 'Reconnecting…';
+        if (up) link.send({ t: 'getstate' });
+      },
       onMessage,
+      onPeerLeft: closePc,
     });
-  } else if (link.name !== name) {
-    link.name = name; link.send({ t: 'rename', name });
+    wakeLock();
+  } else {
+    link.setMeta({ name });
   }
-  wake();
 }
 
 function onMessage(m) {
-  if (m.t === 'welcome') { for (const id of [...pcs.keys()]) closePc(id); updateTally(m.state); }
-  else if (m.t === 'state') updateTally(m.state);
+  if (m.t === 'state') updateTally(m.state);
   else if (m.t === 'signal') onSignal(m.from, m.data);
-  else if (m.t === 'peer-left') closePc(m.id);
 }
 
 function updateTally(s) {
@@ -170,7 +172,7 @@ async function onSignal(from, data) {
     pcs.set(from, { pc, quality: data.quality });
     for (const t of stream.getVideoTracks()) pc.addTrack(t, stream);
     preferH264(pc);
-    pc.onicecandidate = (e) => e.candidate && link.send({ t: 'signal', to: from, data: { type: 'ice', candidate: e.candidate } });
+    pc.onicecandidate = (e) => e.candidate && link.send({ t: 'signal', to: from, data: { type: 'ice', candidate: e.candidate.toJSON() } });
     pc.onconnectionstatechange = () => {
       if (['failed', 'closed'].includes(pc.connectionState)) closePc(from);
       countViewers();
@@ -210,11 +212,9 @@ $('#flip').onclick = () => {
   start();
 };
 
-// Keep the phone screen on — if it locks, the camera stops.
-let lock = null;
-async function wake() { try { lock = await navigator.wakeLock?.request('screen'); } catch {} }
+// If the phone comes back from the background, resume the preview.
 document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'visible' && stream) { wake(); $('#preview').play().catch(() => {}); }
+  if (document.visibilityState === 'visible' && stream) $('#preview').play().catch(() => {});
 });
 </script>
 </body>
