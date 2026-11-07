@@ -1,0 +1,221 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<title>Canyon Night — Live Camera</title>
+<link rel="stylesheet" href="/style.css">
+<style>
+  html, body { height: 100%; overflow: hidden; }
+  body { display: grid; grid-template-rows: auto 1fr; }
+  #view { position: relative; background: #000; border: 6px solid transparent; transition: border-color .1s; min-height: 0; }
+  #view.live { border-color: var(--live); }
+  #view video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+  #tally { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); font-weight: 800; letter-spacing: .1em;
+    padding: 6px 16px; border-radius: 8px; background: #000a; color: var(--dim); font-size: 15px; z-index: 2; }
+  #view.live #tally { background: var(--live); color: #fff; }
+  #setup { position: absolute; inset: 0; display: grid; place-items: center; z-index: 3; background: #0e0d0cee; padding: 20px; }
+  #setup .panel { width: min(420px, 100%); display: grid; gap: 12px; }
+  #setup label { display: grid; gap: 6px; font-size: 14px; color: var(--dim); }
+  #go { background: var(--live); border-color: var(--live); color: #fff; font-weight: 800; font-size: 18px; padding: 16px; }
+  .ctl { position: absolute; bottom: 12px; right: 12px; display: flex; gap: 8px; z-index: 2; }
+  .ctl button { background: #000a; padding: 10px 14px; font-size: 14px; }
+  #err { color: #ffb4ad; font-size: 14px; }
+  #hint { position: absolute; bottom: 12px; left: 12px; font-size: 12px; color: var(--dim); z-index: 2; background: #000a; padding: 6px 10px; border-radius: 8px; }
+</style>
+</head>
+<body>
+<header class="bar">
+  <h1>CANYON NIGHT · CAMERA</h1>
+  <span id="conn" class="chip bad">Server</span>
+  <span id="viewers" class="chip">0 viewers</span>
+</header>
+<div id="view">
+  <span id="tally">STANDBY</span>
+  <video id="preview" muted playsinline autoplay></video>
+  <div class="ctl">
+    <button id="flip">⟲ Flip</button>
+    <button id="settings">⚙︎</button>
+  </div>
+  <div id="hint">Hold the phone sideways · keep this page open</div>
+  <div id="setup">
+    <div class="panel">
+      <h2>Join the show as a live camera</h2>
+      <label>Camera name <input type="text" id="name" placeholder="e.g. Wide shot, Host cam"></label>
+      <label>Lens
+        <select id="facing">
+          <option value="environment">Back camera</option>
+          <option value="user">Front (selfie) camera</option>
+        </select>
+      </label>
+      <label>Quality
+        <select id="res">
+          <option value="1080">1080p (best, needs good Wi-Fi)</option>
+          <option value="720" selected>720p (recommended)</option>
+          <option value="540">540p (weak Wi-Fi)</option>
+        </select>
+      </label>
+      <button id="go">● Go live-ready</button>
+      <div id="err"></div>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+import { connect, RTC_CONFIG, $ } from './common.js';
+
+const store = {
+  get: (k, d) => { try { return localStorage.getItem(k) ?? d; } catch { return d; } },
+  set: (k, v) => { try { localStorage.setItem(k, v); } catch {} },
+};
+$('#name').value = store.get('camName', '');
+$('#facing').value = store.get('camFacing', 'environment');
+$('#res').value = store.get('camRes', '720');
+
+let stream = null;
+let link = null;
+const pcs = new Map(); // viewerId -> {pc, quality}
+
+async function getCamera() {
+  const h = Number($('#res').value);
+  const w = Math.round(h * 16 / 9);
+  const s = await navigator.mediaDevices.getUserMedia({
+    audio: false,
+    video: { facingMode: $('#facing').value, width: { ideal: w }, height: { ideal: h }, frameRate: { ideal: 30, max: 30 } },
+  });
+  const t = s.getVideoTracks()[0];
+  try { t.contentHint = 'motion'; } catch {}
+  return s;
+}
+
+async function start() {
+  $('#err').textContent = '';
+  if (!navigator.mediaDevices?.getUserMedia) {
+    $('#err').textContent = location.protocol !== 'https:'
+      ? 'Camera needs the https:// link. Open the camera link from the laptop start page.'
+      : 'This browser can’t access the camera.';
+    return;
+  }
+  try {
+    // Release the old lens first: iPhones can't open two cameras at once.
+    if (stream) stream.getTracks().forEach((t) => t.stop());
+    stream = await getCamera();
+  } catch (e) {
+    $('#err').textContent = 'Could not open the camera: ' + (e.message || e.name) + '. Allow camera access and try again.';
+    return;
+  }
+  $('#preview').srcObject = stream;
+  $('#preview').style.transform = $('#facing').value === 'user' ? 'scaleX(-1)' : '';
+  store.set('camName', $('#name').value); store.set('camFacing', $('#facing').value); store.set('camRes', $('#res').value);
+  $('#setup').style.display = 'none';
+  const name = $('#name').value.trim() || 'Phone camera';
+  // Replace the track on every open connection (instant lens switch, no reconnect)
+  const track = stream.getVideoTracks()[0];
+  for (const { pc } of pcs.values()) for (const snd of pc.getSenders()) snd.replaceTrack(track);
+  if (!link) {
+    link = connect('camera', {
+      name,
+      onStatus: (up) => { $('#conn').className = 'chip ' + (up ? 'ok' : 'bad'); $('#conn').textContent = up ? 'Server' : 'Reconnecting…'; },
+      onMessage,
+    });
+  } else if (link.name !== name) {
+    link.name = name; link.send({ t: 'rename', name });
+  }
+  wake();
+}
+
+function onMessage(m) {
+  if (m.t === 'welcome') { for (const id of [...pcs.keys()]) closePc(id); updateTally(m.state); }
+  else if (m.t === 'state') updateTally(m.state);
+  else if (m.t === 'signal') onSignal(m.from, m.data);
+  else if (m.t === 'peer-left') closePc(m.id);
+}
+
+function updateTally(s) {
+  const live = s.program.kind === 'camera' && s.program.id === link.id;
+  $('#view').classList.toggle('live', live);
+  $('#tally').textContent = live ? '● ON AIR' : 'STANDBY';
+  if (live) navigator.vibrate?.(60);
+}
+
+function preferH264(pc) {
+  // Phones encode H.264 in hardware: lower latency and less heat.
+  try {
+    const caps = RTCRtpSender.getCapabilities('video').codecs;
+    const h264 = caps.filter((c) => /h264/i.test(c.mimeType));
+    const rest = caps.filter((c) => !/h264/i.test(c.mimeType));
+    for (const tr of pc.getTransceivers()) tr.setCodecPreferences?.([...h264, ...rest]);
+  } catch {}
+}
+
+async function tune(pc, quality) {
+  for (const sender of pc.getSenders()) {
+    const p = sender.getParameters();
+    if (!p.encodings || !p.encodings.length) p.encodings = [{}];
+    const e = p.encodings[0];
+    if (quality === 'low') { e.scaleResolutionDownBy = 4; e.maxBitrate = 400_000; e.maxFramerate = 15; }
+    else { e.scaleResolutionDownBy = 1; e.maxBitrate = 8_000_000; e.maxFramerate = 30; }
+    p.degradationPreference = 'maintain-framerate';
+    try { await sender.setParameters(p); } catch (err) { console.warn('setParameters', err); }
+  }
+}
+
+async function onSignal(from, data) {
+  if (data.type === 'want') {
+    if (!stream) return;
+    closePc(from);
+    const pc = new RTCPeerConnection(RTC_CONFIG);
+    pcs.set(from, { pc, quality: data.quality });
+    for (const t of stream.getVideoTracks()) pc.addTrack(t, stream);
+    preferH264(pc);
+    pc.onicecandidate = (e) => e.candidate && link.send({ t: 'signal', to: from, data: { type: 'ice', candidate: e.candidate } });
+    pc.onconnectionstatechange = () => {
+      if (['failed', 'closed'].includes(pc.connectionState)) closePc(from);
+      countViewers();
+    };
+    const offer = await pc.createOffer();
+    await pc.setLocalDescription(offer);
+    await tune(pc, data.quality);
+    link.send({ t: 'signal', to: from, data: { type: 'offer', sdp: pc.localDescription.sdp } });
+  } else if (data.type === 'answer') {
+    const e = pcs.get(from);
+    if (e) { await e.pc.setRemoteDescription({ type: 'answer', sdp: data.sdp }); tune(e.pc, e.quality); }
+  } else if (data.type === 'ice') {
+    const e = pcs.get(from);
+    if (e) try { await e.pc.addIceCandidate(data.candidate); } catch {}
+  } else if (data.type === 'bye') {
+    closePc(from);
+  }
+}
+
+function closePc(id) {
+  const e = pcs.get(id);
+  if (!e) return;
+  pcs.delete(id);
+  e.pc.close();
+  countViewers();
+}
+function countViewers() {
+  const n = [...pcs.values()].filter((e) => e.pc.connectionState === 'connected').length;
+  $('#viewers').textContent = `${n} viewer${n === 1 ? '' : 's'}`;
+  $('#viewers').className = 'chip ' + (n ? 'ok' : '');
+}
+
+$('#go').onclick = start;
+$('#settings').onclick = () => { $('#setup').style.display = ''; };
+$('#flip').onclick = () => {
+  $('#facing').value = $('#facing').value === 'user' ? 'environment' : 'user';
+  start();
+};
+
+// Keep the phone screen on — if it locks, the camera stops.
+let lock = null;
+async function wake() { try { lock = await navigator.wakeLock?.request('screen'); } catch {} }
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && stream) { wake(); $('#preview').play().catch(() => {}); }
+});
+</script>
+</body>
+</html>
