@@ -360,7 +360,8 @@ function render() {
     const [a, b] = (room.cached || '0/0').split('/').map(Number);
     scr.className = 'pill keep ' + (a < b ? 'warn' : 'ok');
     scr.textContent = a < b ? `Loading media ${a}/${b}` : 'Screen live';
-    warn.className = 'banner';
+    if (room.screens > 1) say(`${room.screens} audience screens are open, so sound may play twice. Close the extra Audience screen tabs or windows on the laptop.`, true);
+    else warn.className = 'banner';
   }
   renderCams();
   renderVideo();

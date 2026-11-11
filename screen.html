@@ -36,7 +36,7 @@
     font: 500 13px "Inter", system-ui, sans-serif; background: rgba(0,0,0,.7); padding: 8px 12px; border-radius: 10px; backdrop-filter: blur(8px);
     transition: opacity .3s; pointer-events: none;
   }
-  body.cursor #hud { opacity: 1; }
+  body.cursor #hud, body.extra #hud { opacity: 1; }
   #offline { position: fixed; top: 10px; right: 10px; width: 10px; height: 10px; border-radius: 50%;
     background: #e33; z-index: 9; display: none; }
   body.offline #offline { display: block; }
@@ -81,10 +81,12 @@ let room = summarize([]);
 const layers = new Map(); // key -> element. keys: 'show:<name>', 'cam:<id>'
 let activeKey = null;
 let lastTakeAt = null;
+const mySince = Date.now();
+let primary = true; // false when another screen page is already open
 
 // ---------------- room ----------------
 const link = connect('screen', {
-  meta: { ready: false, cached: '' },
+  meta: { ready: false, cached: '', since: mySince },
   onStatus: (up) => document.body.classList.toggle('offline', !up),
   onMessage: (m) => {
     if (m.t === 'cmd') command(m);
@@ -94,6 +96,11 @@ const link = connect('screen', {
   },
   onPeers: (peers) => {
     room = summarize(peers);
+    // If several screen pages are open, only the oldest one plays sound;
+    // otherwise every video and sound effect is heard twice, out of sync.
+    // (An older version of this page doesn't report `since`; let it win.)
+    const others = peers.filter((p) => p.role === 'screen');
+    primary = !others.some((o) => (o.since ?? 0) < mySince || ((o.since ?? 0) === mySince && o.id < link.id));
     cams.sync(room.cameras);
     if (state.program.kind === 'camera' && !room.cameras.find((c) => c.id === state.program.id)) {
       state.program = { kind: 'black' }; // camera dropped while live: go to black, not a frozen frame
@@ -244,9 +251,10 @@ function render() {
   else if (p.kind === 'camera') key = 'cam:' + p.id;
 
   for (const [k, e] of layers) {
-    if (e.tagName === 'VIDEO' && k.startsWith('show:')) { e.volume = Math.min(1, state.video.volume); e.loop = state.video.loop; }
+    if (e.tagName === 'VIDEO' && k.startsWith('show:')) { e.volume = Math.min(1, state.video.volume); e.loop = state.video.loop; e.muted = !primary; }
   }
-  if (master) master.gain.value = state.master;
+  if (master) master.gain.value = primary ? state.master : 0;
+  document.body.classList.toggle('extra', !primary);
 
   const next = key && layers.get(key);
   const isNewTake = p.at && p.at !== lastTakeAt;
@@ -279,7 +287,7 @@ function render() {
 let hudMsg = '';
 function hud() {
   const p = state.program;
-  $('#hud').textContent = (hudMsg ? hudMsg + ' · ' : '') +
+  $('#hud').textContent = (primary ? '' : 'EXTRA SCREEN (sound off, another screen tab is open) · ') + (hudMsg ? hudMsg + ' · ' : '') +
     `media ${library.show.filter((i) => cache.has(i.url)).length}/${library.show.length} loaded · ` +
     (room.cameras.map((c) => `${c.name}: ${cams.states.get(c.id) || 'waiting'}`).join(', ') || '0 cameras') + ' · live: ' +
     (p.kind === 'show' ? p.name : p.kind === 'camera' ? (room.cameras.find((c) => c.id === p.id)?.name || 'camera') : 'black');
@@ -342,7 +350,7 @@ function loadSounds(list) {
   }
 }
 async function sfxOp(op, name) {
-  if (!actx) return;
+  if (!actx || !primary) return;
   if (op === 'stopAll') { for (const n of [...playing.keys()]) stopSound(n, 0.05); return; }
   if (op === 'fadeAll') { for (const n of [...playing.keys()]) stopSound(n, 1.5); return; }
   if (op === 'stop') return stopSound(name, 0.05);
