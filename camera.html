@@ -88,7 +88,7 @@
 </div>
 
 <script type="module">
-import { connect, RTC_CONFIG, SignalQueue, addIce, setRemote, $, wakeLock } from './common.js';
+import { connect, getRtcConfig, SignalQueue, addIce, setRemote, $, wakeLock } from './common.js';
 
 const store = {
   get: (k, d) => { try { return localStorage.getItem(k) ?? d; } catch { return d; } },
@@ -195,8 +195,9 @@ async function handleSignal(from, data) {
   if (data.type === 'want') {
     if (!stream) return;
     closePc(from);
-    const pc = new RTCPeerConnection(RTC_CONFIG);
+    const pc = new RTCPeerConnection(await getRtcConfig());
     pcs.set(from, { pc, quality: data.quality });
+    countViewers();
     for (const t of stream.getVideoTracks()) pc.addTrack(t, stream);
     preferH264(pc);
     pc.onicecandidate = (e) => e.candidate && link.send({ t: 'signal', to: from, data: { type: 'ice', candidate: e.candidate.toJSON() } });
@@ -229,9 +230,11 @@ function closePc(id) {
   countViewers();
 }
 function countViewers() {
-  const n = [...pcs.values()].filter((e) => e.pc.connectionState === 'connected').length;
-  $('#viewers').textContent = `${n} viewer${n === 1 ? '' : 's'}`;
-  $('#viewers').className = 'pill ' + (n ? 'ok' : '');
+  const all = [...pcs.values()];
+  const n = all.filter((e) => e.pc.connectionState === 'connected').length;
+  const trying = all.length - n;
+  $('#viewers').textContent = `${n} viewer${n === 1 ? '' : 's'}` + (trying ? ` · ${trying} connecting` : '');
+  $('#viewers').className = 'pill ' + (n ? 'ok' : trying ? 'warn' : '');
 }
 
 $('#go').onclick = start;

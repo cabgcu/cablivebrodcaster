@@ -73,6 +73,29 @@ To keep camera delay low:
 - Use a good 5 GHz Wi-Fi router dedicated to the show. Busy venue or guest Wi-Fi is the most common cause of lag. Some guest networks also block device-to-device traffic entirely.
 - Choose 720p on the phone. Use 1080p only on a strong network.
 
+## Cameras show black
+
+Each camera tile on the controller now says what is happening:
+
+- **Connecting…**: the phone and laptop are still finding each other. This normally takes 1–3 seconds.
+- **Network is blocking the video**: they could not find a direct route. The phone's badge stays on *0 viewers · N connecting*.
+
+The usual reasons a direct route fails:
+
+1. **The Wi-Fi isolates devices.** School, campus, hotel, venue and "guest" networks often block devices from talking to each other.
+2. **A phone is on cellular** and not on the same Wi-Fi as the laptop.
+3. A VPN or "Private Relay" is turned on on the phone or laptop.
+
+Fixes, quickest first:
+
+- Put every device on the **same private network**. A portable router, or a phone hotspot that the laptop and the camera phones all join, works well.
+- Or set up a **TURN relay** so the video can go through a server when a direct route is blocked:
+  1. Create a free account at metered.ca → *TURN Server* → create an app. The free plan includes 50 GB/month, enough for a few hours of cameras.
+  2. Copy the "credentials API URL". It looks like `https://YOUR-APP.metered.live/api/v1/turn/credentials?apiKey=…`.
+  3. Paste it into `ICE_SERVERS_URL` in `config.js`, then reload every page.
+
+  The direct Wi-Fi route is still used whenever it works. The relay is only the fallback. A relayed camera has slightly more delay.
+
 ## Security note
 
 The publishable key is designed to be visible in browser code, but anyone with it can use what the setup SQL allows. Anyone who has the page links and digs out the key could upload or delete show media, or send commands during the show. For a small show that is usually acceptable. To lock it down, add Supabase Auth (a show login) and change the policies in `setup.sql` from `anon` to `authenticated`.

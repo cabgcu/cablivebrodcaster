@@ -136,6 +136,7 @@ const cams = new CameraViewer(link, {
     render();
   },
   onGone: (id) => removeLayer('cam:' + id),
+  onState: () => hud(),
 });
 
 // ---------------- layers ----------------
@@ -266,7 +267,8 @@ let hudMsg = '';
 function hud() {
   const p = state.program;
   $('#hud').textContent = (hudMsg ? hudMsg + ' · ' : '') +
-    `media ${library.show.filter((i) => cache.has(i.url)).length}/${library.show.length} loaded · ${room.cameras.length} camera(s) · live: ` +
+    `media ${library.show.filter((i) => cache.has(i.url)).length}/${library.show.length} loaded · ` +
+    (room.cameras.map((c) => `${c.name}: ${cams.states.get(c.id) || 'waiting'}`).join(', ') || '0 cameras') + ' · live: ' +
     (p.kind === 'show' ? p.name : p.kind === 'camera' ? (room.cameras.find((c) => c.id === p.id)?.name || 'camera') : 'black');
 }
 
