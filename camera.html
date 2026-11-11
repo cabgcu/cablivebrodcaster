@@ -88,7 +88,7 @@
 </div>
 
 <script type="module">
-import { connect, RTC_CONFIG, $, wakeLock } from './common.js';
+import { connect, RTC_CONFIG, SignalQueue, addIce, setRemote, $, wakeLock } from './common.js';
 
 const store = {
   get: (k, d) => { try { return localStorage.getItem(k) ?? d; } catch { return d; } },
@@ -189,7 +189,9 @@ async function tune(pc, quality) {
   }
 }
 
-async function onSignal(from, data) {
+const signals = new SignalQueue();
+function onSignal(from, data) { return signals.run(from, () => handleSignal(from, data)); }
+async function handleSignal(from, data) {
   if (data.type === 'want') {
     if (!stream) return;
     closePc(from);
@@ -204,14 +206,16 @@ async function onSignal(from, data) {
     };
     const offer = await pc.createOffer();
     await pc.setLocalDescription(offer);
-    await tune(pc, data.quality);
+    // Send the offer right away, before any ICE candidates that setLocalDescription
+    // just started gathering, so the viewer can use them.
     link.send({ t: 'signal', to: from, data: { type: 'offer', sdp: pc.localDescription.sdp } });
+    tune(pc, data.quality);
   } else if (data.type === 'answer') {
     const e = pcs.get(from);
-    if (e) { await e.pc.setRemoteDescription({ type: 'answer', sdp: data.sdp }); tune(e.pc, e.quality); }
+    if (e && e.pc.signalingState === 'have-local-offer') { await setRemote(e.pc, { type: 'answer', sdp: data.sdp }); tune(e.pc, e.quality); }
   } else if (data.type === 'ice') {
     const e = pcs.get(from);
-    if (e) try { await e.pc.addIceCandidate(data.candidate); } catch {}
+    if (e) await addIce(e.pc, data.candidate);
   } else if (data.type === 'bye') {
     closePc(from);
   }

@@ -127,7 +127,8 @@ const cams = new CameraViewer(link, {
   onStream: (id, stream) => {
     const v = layerFor('cam:' + id, () => {
       const v = document.createElement('video');
-      v.muted = true; v.playsInline = true; v.autoplay = true;
+      // No autoplay attribute: Chrome pauses hidden autoplay videos. We call play() ourselves.
+      v.muted = true; v.playsInline = true;
       return v;
     });
     v.srcObject = stream;
@@ -253,6 +254,8 @@ function render() {
         next.currentTime = 0;
         if (state.video.autoplay && audioReady) next.play().catch(() => {});
       }
+      // A camera feed must be playing when it goes on air, or it shows black.
+      if (next.tagName === 'VIDEO' && next.srcObject) next.play().catch(() => {});
     }
     activeKey = next ? key : null;
     reportVideo();
