@@ -125,6 +125,29 @@ export const RTC_CONFIG = {
   bundlePolicy: 'max-bundle',
 };
 
+// Signalling messages arrive over the network in order, but the handlers are
+// async. Run them one at a time per peer, and hold ICE candidates until the
+// remote description is set — otherwise addIceCandidate throws, the candidate
+// is lost, the connection never forms, and the video stays black.
+export class SignalQueue {
+  constructor() { this.chains = new Map(); }
+  run(key, fn) {
+    const next = (this.chains.get(key) || Promise.resolve()).then(fn).catch((e) => console.warn('signal', e));
+    this.chains.set(key, next);
+    return next;
+  }
+}
+export async function addIce(pc, candidate) {
+  if (!pc.remoteDescription) { (pc._pendingIce ||= []).push(candidate); return; }
+  try { await pc.addIceCandidate(candidate); } catch (e) { console.warn('ice', e); }
+}
+export async function setRemote(pc, desc) {
+  await pc.setRemoteDescription(desc);
+  const pending = pc._pendingIce || [];
+  pc._pendingIce = [];
+  for (const c of pending) { try { await pc.addIceCandidate(c); } catch (e) { console.warn('ice', e); } }
+}
+
 // Ask the browser to render frames as soon as they arrive (lowest latency).
 export function lowLatencyReceiver(receiver) {
   try { receiver.playoutDelayHint = 0; } catch {}
@@ -139,6 +162,7 @@ export class CameraViewer {
     this.onStream = onStream;
     this.onGone = onGone;
     this.pcs = new Map(); // cameraId -> pc
+    this.queue = new SignalQueue();
   }
   // Call with the current camera list; opens/closes connections.
   sync(cameras) {
@@ -162,6 +186,8 @@ export class CameraViewer {
     pc.onconnectionstatechange = () => { if (pc.connectionState === 'failed') retry(); };
     // If the camera never answers (e.g. it was still starting), ask again.
     setTimeout(() => { if (pc.connectionState === 'new' && !pc.remoteDescription) retry(); }, 6000);
+    // If it answered but video never started flowing, start over.
+    setTimeout(() => { if (pc.connectionState !== 'connected') retry(); }, 15000);
     this.signal(camId, { type: 'want', quality: this.quality });
   }
   drop(camId, quiet) {
@@ -173,17 +199,19 @@ export class CameraViewer {
     this.onGone(camId);
   }
   signal(to, data) { this.link.send({ t: 'signal', to, data }); }
-  async handleSignal(from, data) {
-    const pc = this.pcs.get(from);
-    if (!pc) return;
-    if (data.type === 'offer') {
-      await pc.setRemoteDescription({ type: 'offer', sdp: data.sdp });
-      const answer = await pc.createAnswer();
-      await pc.setLocalDescription(answer);
-      this.signal(from, { type: 'answer', sdp: pc.localDescription.sdp });
-    } else if (data.type === 'ice') {
-      try { await pc.addIceCandidate(data.candidate); } catch {}
-    }
+  handleSignal(from, data) {
+    return this.queue.run(from, async () => {
+      const pc = this.pcs.get(from);
+      if (!pc || pc.signalingState === 'closed') return;
+      if (data.type === 'offer') {
+        await setRemote(pc, { type: 'offer', sdp: data.sdp });
+        const answer = await pc.createAnswer();
+        await pc.setLocalDescription(answer);
+        this.signal(from, { type: 'answer', sdp: pc.localDescription.sdp });
+      } else if (data.type === 'ice') {
+        await addIce(pc, data.candidate);
+      }
+    });
   }
 }
 
