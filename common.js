@@ -1,6 +1,7 @@
 // Shared client code: the show "room" (Supabase Realtime), the media library,
 // and WebRTC helpers used by the screen, controller and cameras.
 import { openRoom, listFolder, uploadFile, deleteFile, loadSettings, saveSettings } from './backend.js';
+import { ICE_SERVERS, ICE_SERVERS_URL } from './config.js';
 
 export { loadSettings, saveSettings };
 
@@ -119,11 +120,25 @@ export async function removeFile(link, folder, name) {
 
 // ---------- WebRTC ----------
 // Cameras stream directly device-to-device on the local Wi-Fi; Supabase only
-// carries the short setup messages. STUN helps if a device is on another network.
-export const RTC_CONFIG = {
-  iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
-  bundlePolicy: 'max-bundle',
-};
+// carries the short setup messages. STUN finds a route through routers; a TURN
+// relay (config.js) is the fallback when the network blocks direct traffic.
+const STUN = { urls: 'stun:stun.l.google.com:19302' };
+let rtcConfigPromise = null;
+export function getRtcConfig() {
+  if (!rtcConfigPromise) rtcConfigPromise = (async () => {
+    let extra = [...ICE_SERVERS];
+    if (ICE_SERVERS_URL) {
+      try {
+        const r = await fetch(ICE_SERVERS_URL);
+        const j = await r.json();
+        extra = extra.concat(Array.isArray(j) ? j : j.iceServers || []);
+      } catch (e) { console.warn('Could not load TURN servers', e); }
+    }
+    return { iceServers: [STUN, ...extra], bundlePolicy: 'max-bundle' };
+  })();
+  return rtcConfigPromise;
+}
+export const hasRelay = () => ICE_SERVERS.length > 0 || !!ICE_SERVERS_URL;
 
 // Signalling messages arrive over the network in order, but the handlers are
 // async. Run them one at a time per peer, and hold ICE candidates until the
@@ -156,11 +171,14 @@ export function lowLatencyReceiver(receiver) {
 
 // Viewer side: subscribe to camera streams. One instance per page.
 export class CameraViewer {
-  constructor(link, { quality = 'high', onStream = () => {}, onGone = () => {} } = {}) {
+  constructor(link, { quality = 'high', onStream = () => {}, onGone = () => {}, onState = () => {} } = {}) {
     this.link = link;
     this.quality = quality;
     this.onStream = onStream;
     this.onGone = onGone;
+    this.onState = onState;
+    this.states = new Map(); // cameraId -> 'connecting' | 'connected' | 'failed'
+    this.fails = new Map(); // cameraId -> failed attempts in a row
     this.pcs = new Map(); // cameraId -> pc
     this.queue = new SignalQueue();
   }
@@ -170,9 +188,16 @@ export class CameraViewer {
     for (const id of [...this.pcs.keys()]) if (!ids.has(id)) this.drop(id);
     for (const id of ids) if (!this.pcs.has(id)) this.request(id);
   }
-  request(camId) {
-    const pc = new RTCPeerConnection(RTC_CONFIG);
+  setState(camId, st) {
+    if (this.states.get(camId) === st) return;
+    this.states.set(camId, st);
+    this.onState(camId, st);
+  }
+  async request(camId) {
+    const pc = new RTCPeerConnection(await getRtcConfig());
+    if (this.pcs.has(camId)) { pc.close(); return; }
     this.pcs.set(camId, pc);
+    if (this.states.get(camId) !== 'failed') this.setState(camId, 'connecting');
     pc.onicecandidate = (e) => e.candidate && this.signal(camId, { type: 'ice', candidate: e.candidate.toJSON() });
     pc.ontrack = (e) => {
       lowLatencyReceiver(e.receiver);
@@ -180,22 +205,31 @@ export class CameraViewer {
     };
     const retry = () => {
       if (this.pcs.get(camId) !== pc) return;
-      this.drop(camId, true);
-      setTimeout(() => { if (!this.pcs.has(camId)) this.request(camId); }, 1500);
+      const n = (this.fails.get(camId) || 0) + 1;
+      this.fails.set(camId, n);
+      console.warn(`camera ${camId}: no video after attempt ${n} (state ${pc.connectionState}/${pc.iceConnectionState})`);
+      this.drop(camId, true, true);
+      if (n >= 2) this.setState(camId, 'failed');
+      setTimeout(() => { if (!this.pcs.has(camId) && this.states.has(camId)) this.request(camId); }, 1500);
     };
-    pc.onconnectionstatechange = () => { if (pc.connectionState === 'failed') retry(); };
+    pc.onconnectionstatechange = () => {
+      if (this.pcs.get(camId) !== pc) return;
+      if (pc.connectionState === 'connected') { this.fails.set(camId, 0); this.setState(camId, 'connected'); }
+      else if (pc.connectionState === 'failed') retry();
+    };
     // If the camera never answers (e.g. it was still starting), ask again.
     setTimeout(() => { if (pc.connectionState === 'new' && !pc.remoteDescription) retry(); }, 6000);
     // If it answered but video never started flowing, start over.
     setTimeout(() => { if (pc.connectionState !== 'connected') retry(); }, 15000);
     this.signal(camId, { type: 'want', quality: this.quality });
   }
-  drop(camId, quiet) {
+  drop(camId, quiet, retrying) {
     const pc = this.pcs.get(camId);
     if (!pc) return;
     this.pcs.delete(camId);
     if (!quiet) this.signal(camId, { type: 'bye' });
     pc.close();
+    if (!retrying) { this.states.delete(camId); this.fails.delete(camId); }
     this.onGone(camId);
   }
   signal(to, data) { this.link.send({ t: 'signal', to, data }); }

@@ -63,6 +63,8 @@
   .toggles { display: flex; flex-wrap: wrap; gap: 10px 16px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border); }
 
   /* cameras */
+  .cam-status { position: absolute; inset: 0; display: grid; place-items: center; padding: 12px; text-align: center; font-size: 13px; color: var(--text-2, #aaa); background: rgba(0,0,0,.55); }
+  .cam-status.bad { color: #ffb4b4; }
   .cams { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(200px, 240px); gap: 14px; overflow-x: auto; padding: 4px; margin: -4px; scrollbar-width: thin; }
   .cam { cursor: pointer; }
   .cam .tile .placeholder { position: absolute; inset: 0; display: grid; place-items: center; color: var(--text-3); font-size: 13px; }
@@ -188,7 +190,7 @@
 </div>
 
 <script type="module">
-import { connect, CameraViewer, summarize, loadLibrary, updateSettings, uploadFiles, removeFile, DEFAULT_STATE,
+import { connect, CameraViewer, hasRelay, summarize, loadLibrary, updateSettings, uploadFiles, removeFile, DEFAULT_STATE,
   $, el, icon, fmtTime, setRange, wakeLock, prettyName } from './common.js';
 
 let library = { show: [], sounds: [] };
@@ -224,6 +226,7 @@ const cams = new CameraViewer(link, {
   quality: 'low',
   onStream: (id, stream) => { camStreams.set(id, stream); render(); },
   onGone: (id) => { camStreams.delete(id); render(); },
+  onState: () => render(),
 });
 
 async function refreshLibrary() {
@@ -369,6 +372,18 @@ function renderCams() {
         el('div', { class: 'cam-meta' }, icon('camera'), c.name, el('span', { class: 'hint' }, 'Cut'))));
     }
   }
+  // Connection status over each camera tile (a black tile otherwise tells you nothing).
+  box.querySelectorAll('.tile').forEach((t) => {
+    const st = cams.states.get(t.dataset.id);
+    const msg = st === 'connected' ? '' : st === 'failed'
+      ? (hasRelay() ? 'Can’t reach this camera. Check the phone is online.' : 'Network is blocking the video. See README: “Cameras show black”.')
+      : 'Connecting…';
+    let o = t.querySelector('.cam-status');
+    if (!msg) { o?.remove(); return; }
+    if (!o) t.append(o = el('div', { class: 'cam-status' }));
+    o.textContent = msg;
+    o.classList.toggle('bad', st === 'failed');
+  });
   const p = S().program;
   box.querySelectorAll('.tile').forEach((t) => {
     const live = p.kind === 'camera' && p.id === t.dataset.id;
