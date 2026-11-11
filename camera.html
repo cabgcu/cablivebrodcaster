@@ -87,6 +87,19 @@
   </div>
 </div>
 
+<script>
+// If the page's code fails to load (often an old copy cached by the browser
+// after an update), say so instead of leaving buttons that do nothing.
+addEventListener('error', function (e) {
+  if (document.getElementById('loadfail')) return;
+  var d = document.createElement('div');
+  d.id = 'loadfail';
+  d.style.cssText = 'position:fixed;left:12px;right:12px;bottom:12px;z-index:99999;padding:14px 16px;border-radius:12px;background:#5c1111;color:#fff;font:15px/1.4 system-ui,sans-serif;box-shadow:0 8px 30px rgba(0,0,0,.5)';
+  d.textContent = 'This page didn\u2019t load properly (' + (e.message || 'script error') + '). Tap here to reload.';
+  d.onclick = function () { location.reload(); };
+  (document.body || document.documentElement).appendChild(d);
+});
+</script>
 <script type="module">
 import { connect, getRtcConfig, SignalQueue, addIce, setRemote, $, wakeLock } from './common.js';
 
