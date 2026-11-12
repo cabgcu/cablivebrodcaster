@@ -155,7 +155,8 @@ async function start() {
   if (!link) {
     link = connect('camera', {
       meta: { name },
-      onStatus: (up) => {
+      onStatus: (up, reason) => {
+    $('#conn').title = up ? '' : reason;
         $('#conn').className = 'pill keep ' + (up ? 'ok' : 'bad'); $('#conn').textContent = up ? 'Online' : 'Reconnecting…';
         if (up) link.send({ t: 'getstate' });
       },
