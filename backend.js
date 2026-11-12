@@ -1,7 +1,7 @@
 // All Supabase access lives here: Realtime (commands, presence, camera
 // signalling), Storage (media files) and one small settings table.
 import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.3/+esm';
-import { SUPABASE_URL, SUPABASE_KEY, BUCKET, ROOM } from './config.js';
+import { SUPABASE_URL, SUPABASE_KEY, BUCKET, ROOM } from './config.js?v=20261112b';
 
 const sb = createClient(SUPABASE_URL, SUPABASE_KEY, {
   auth: { persistSession: false },
@@ -15,6 +15,7 @@ const sb = createClient(SUPABASE_URL, SUPABASE_KEY, {
 // High-frequency status messages are dropped while not joined (instead of
 // each one turning into a REST request); commands still go out over REST so a
 // button press is not lost while the controller reconnects.
+console.info('[room] show code version 20261112b');
 const REST_OK = new Set(['cmd', 'library', 'state', 'getstate']);
 
 export function openRoom({ id, meta, onMessage, onPeers, onStatus }) {
@@ -84,11 +85,11 @@ export function openRoom({ id, meta, onMessage, onPeers, onStatus }) {
   return {
     send: (msg) => {
       if (!ch) return Promise.resolve('dropped');
-      if (joined) return ch.send({ type: 'broadcast', event: 'm', payload: msg });
+      // `joined` can lag behind a dropped socket by a moment; check the real state.
+      const live = joined && ch.state === 'joined' && sb.realtime.isConnected();
+      if (live) return ch.send({ type: 'broadcast', event: 'm', payload: msg });
       if (!REST_OK.has(msg?.t)) return Promise.resolve('dropped');
-      return typeof ch.httpSend === 'function'
-        ? ch.httpSend('m', msg).catch((e) => console.warn('[room] REST send failed', e))
-        : ch.send({ type: 'broadcast', event: 'm', payload: msg });
+      return ch.httpSend('m', msg).catch((e) => console.warn('[room] REST send failed', e));
     },
     track: (m) => { current = m; return joined ? ch.track(m) : Promise.resolve('queued'); },
   };

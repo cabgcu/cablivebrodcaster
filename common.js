@@ -1,9 +1,9 @@
 // Shared client code: the show "room" (Supabase Realtime), the media library,
 // and WebRTC helpers used by the screen, controller and cameras.
-import { openRoom, listFolder, uploadFile, deleteFile, loadSettings, saveSettings } from './backend.js';
+import { openRoom, listFolder, uploadFile, deleteFile, loadSettings, saveSettings } from './backend.js?v=20261112b';
 // Namespace import: an older cached config.js without the relay settings
 // must not stop the page from loading.
-import * as config from './config.js';
+import * as config from './config.js?v=20261112b';
 const ICE_SERVERS = Array.isArray(config.ICE_SERVERS) ? config.ICE_SERVERS : [];
 const ICE_SERVERS_URL = typeof config.ICE_SERVERS_URL === 'string' ? config.ICE_SERVERS_URL : '';
 

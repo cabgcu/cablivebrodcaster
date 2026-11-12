@@ -101,7 +101,7 @@ addEventListener('error', function (e) {
 });
 </script>
 <script type="module">
-import { connect, getRtcConfig, SignalQueue, addIce, setRemote, $, wakeLock } from './common.js';
+import { connect, getRtcConfig, SignalQueue, addIce, setRemote, $, wakeLock } from './common.js?v=20261112b';
 
 const store = {
   get: (k, d) => { try { return localStorage.getItem(k) ?? d; } catch { return d; } },
