@@ -37,14 +37,17 @@
     transition: opacity .3s; pointer-events: none;
   }
   body.cursor #hud, body.extra #hud { opacity: 1; }
-  #offline { position: fixed; top: 10px; right: 10px; width: 10px; height: 10px; border-radius: 50%;
-    background: #e33; z-index: 9; display: none; }
+  #offline { position: fixed; top: 10px; right: 10px; z-index: 9; display: none; max-width: 60vw;
+    padding: 6px 10px 6px 24px; border-radius: 10px; background: rgba(120,10,10,.85); color: #fff;
+    font: 500 12.5px "Inter", system-ui, sans-serif; }
+  #offline::before { content: ""; position: absolute; left: 9px; top: 50%; width: 8px; height: 8px; margin-top: -4px;
+    border-radius: 50%; background: #ff5a5a; }
   body.offline #offline { display: block; }
 </style>
 </head>
 <body class="offline">
 <div id="stage"></div>
-<div id="offline" title="Not connected to show server"></div>
+<div id="offline">Connecting to show server…</div>
 <div id="hud"></div>
 <div id="start">
   <div>
@@ -87,7 +90,11 @@ let primary = true; // false when another screen page is already open
 // ---------------- room ----------------
 const link = connect('screen', {
   meta: { ready: false, cached: '', since: mySince },
-  onStatus: (up) => document.body.classList.toggle('offline', !up),
+  onStatus: (up, reason) => {
+    document.body.classList.toggle('offline', !up);
+    $('#offline').textContent = up ? '' : 'Not connected to show server' + (reason ? ' — ' + reason : '') + '. Retrying…';
+    if (up) link.send({ t: 'state', state }); // tell controllers what's live as soon as we're back
+  },
   onMessage: (m) => {
     if (m.t === 'cmd') command(m);
     else if (m.t === 'getstate') link.send({ t: 'state', to: m.from, state });

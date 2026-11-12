@@ -137,7 +137,8 @@ let playing = new Map();
 let current = null; // sound being edited
 
 const link = connect('sound', {
-  onStatus: (up) => {
+  onStatus: (up, reason) => {
+    $('#conn').title = up ? '' : reason;
     $('#conn').className = 'pill ' + (up ? 'ok' : 'bad'); $('#conn').textContent = up ? 'Online' : 'Offline';
     if (up) link.send({ t: 'getstate' });
   },

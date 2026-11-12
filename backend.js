@@ -9,26 +9,88 @@ const sb = createClient(SUPABASE_URL, SUPABASE_KEY, {
 });
 
 // ---------- realtime room ----------
+// Joins the show channel and keeps it joined: if the join fails, times out or
+// the socket drops, the channel is torn down and rebuilt with a growing delay.
+// onStatus(up, reason) reports why it is down so pages can show it.
+// High-frequency status messages are dropped while not joined (instead of
+// each one turning into a REST request); commands still go out over REST so a
+// button press is not lost while the controller reconnects.
+const REST_OK = new Set(['cmd', 'library', 'state', 'getstate']);
+
 export function openRoom({ id, meta, onMessage, onPeers, onStatus }) {
   let current = meta;
-  const ch = sb.channel('show:' + ROOM, {
-    config: { broadcast: { self: false, ack: false }, presence: { key: id } },
+  let ch = null;
+  let joined = false;
+  let attempt = 0;
+  let retryTimer = null;
+
+  const report = (up, reason) => {
+    joined = up;
+    try { onStatus(up, reason || ''); } catch (e) { console.error(e); }
+  };
+
+  let joining = false;
+  async function join() {
+    clearTimeout(retryTimer);
+    if (joining) return;
+    joining = true;
+    const old = ch;
+    ch = null;
+    if (old) {
+      // sb.channel() hands back an existing channel with the same name, so the
+      // old one must be fully gone first, even if unsubscribing timed out.
+      await sb.removeChannel(old).catch(() => {});
+      if (sb.getChannels().includes(old)) { try { old.teardown(); sb.realtime._remove(old); } catch {} }
+    }
+    joining = false;
+    const mine = sb.channel('show:' + ROOM, {
+      config: { broadcast: { self: false, ack: false }, presence: { key: id } },
+    });
+    ch = mine;
+    mine.on('broadcast', { event: 'm' }, ({ payload }) => onMessage(payload));
+    mine.on('presence', { event: 'sync' }, () => {
+      const st = mine.presenceState();
+      onPeers(Object.entries(st).map(([key, metas]) => {
+        const { presence_ref, ...m } = metas[metas.length - 1] || {};
+        return { id: key, ...m };
+      }));
+    });
+    mine.subscribe((status, err) => {
+      if (mine !== ch) return; // an older channel we already replaced
+      if (status === 'SUBSCRIBED') {
+        attempt = 0;
+        report(true);
+        mine.track(current);
+        return;
+      }
+      const reason = status === 'TIMED_OUT' ? 'Timed out reaching Supabase Realtime'
+        : status === 'CLOSED' ? 'Connection closed'
+        : 'Realtime error' + (err?.message ? ': ' + err.message : '');
+      console.warn('[room]', status, err || '');
+      report(false, reason);
+      // Rebuild the channel ourselves; 1s, 2s, 4s … up to 15s.
+      const delay = Math.min(15000, 1000 * 2 ** attempt++);
+      retryTimer = setTimeout(join, delay);
+    });
+  }
+
+  join();
+  // Coming back from sleep / a network change: rejoin right away.
+  addEventListener('online', () => { if (!joined) { attempt = 0; join(); } });
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && !joined) { attempt = 0; join(); }
   });
-  ch.on('broadcast', { event: 'm' }, ({ payload }) => onMessage(payload));
-  ch.on('presence', { event: 'sync' }, () => {
-    const st = ch.presenceState();
-    onPeers(Object.entries(st).map(([key, metas]) => {
-      const { presence_ref, ...m } = metas[metas.length - 1] || {};
-      return { id: key, ...m };
-    }));
-  });
-  ch.subscribe((status) => {
-    onStatus(status === 'SUBSCRIBED');
-    if (status === 'SUBSCRIBED') ch.track(current);
-  });
+
   return {
-    send: (msg) => ch.send({ type: 'broadcast', event: 'm', payload: msg }),
-    track: (m) => { current = m; return ch.track(m); },
+    send: (msg) => {
+      if (!ch) return Promise.resolve('dropped');
+      if (joined) return ch.send({ type: 'broadcast', event: 'm', payload: msg });
+      if (!REST_OK.has(msg?.t)) return Promise.resolve('dropped');
+      return typeof ch.httpSend === 'function'
+        ? ch.httpSend('m', msg).catch((e) => console.warn('[room] REST send failed', e))
+        : ch.send({ type: 'broadcast', event: 'm', payload: msg });
+    },
+    track: (m) => { current = m; return joined ? ch.track(m) : Promise.resolve('queued'); },
   };
 }
 

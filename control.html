@@ -214,7 +214,8 @@ let editing = false;
 const camStreams = new Map();
 
 const link = connect('control', {
-  onStatus: (up) => {
+  onStatus: (up, reason) => {
+    $('#conn').title = up ? '' : reason;
     $('#conn').className = 'pill ' + (up ? 'ok' : 'bad');
     $('#conn').textContent = up ? 'Online' : 'Offline';
     if (up) link.send({ t: 'getstate' });
