@@ -82,7 +82,7 @@ The relay is saved in Supabase, so every device picks it up. There's no need to 
 
 If the test says *Not reachable* on the school Wi-Fi, the school may block the relay's port. Add a TLS address on port 443 if your provider gives one (e.g. `turns:…:443?transport=tcp`), because schools almost never block port 443. Put several addresses in the box separated by spaces. As a last resort, use a phone hotspot or a portable router for the laptop and cameras.
 
-**Data use:** each relayed camera uses about 1 GB per hour. Check your provider's free monthly allowance against your show length and number of cameras.
+**Data use:** each relayed camera uses roughly 1–2 GB per hour (some providers count data both in and out). Check your provider's free monthly allowance against your show length and number of cameras.
 
 ## Camera latency
 
