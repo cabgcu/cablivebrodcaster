@@ -14,7 +14,7 @@ A browser-based show control system for the Canyon Night live talk show. There i
 
 - **Supabase Realtime** (Broadcast + Presence) carries the iPads' button presses to the laptop and keeps track of which devices are online. It also carries the short setup messages that connect each camera.
 - **Supabase Storage** (bucket `canyon-media`) holds the slides, videos and sounds. When the audience screen opens, it **downloads every slide and video into the laptop's memory**. Playback then never waits on the internet. The controller shows *Screen loading media 3/7* until the download finishes.
-- **Camera video does not go through Supabase.** It travels phone → laptop directly over your Wi-Fi (WebRTC). Cameras connect as soon as they join and keep playing in the background. A cut is therefore instant.
+- **Camera video does not go through Supabase.** It travels phone → laptop directly over your Wi-Fi (WebRTC). When that's impossible (different Wi-Fi networks, cellular, or a school network that blocks it), it goes through a **camera relay** (TURN server) that you set up once on the start page. Cameras connect as soon as they join and keep playing in the background. A cut is therefore instant.
 - The audience screen holds the show state, meaning what's live. It saves that state to Supabase, so a reload comes back on the same slide.
 
 ## One-time setup
@@ -46,7 +46,7 @@ Netlify, Vercel and Cloudflare Pages also work. Upload or connect the folder; th
 2. **Audience screen:** click *Open*, drag the Chrome window onto the projector, then **click once**. That one click turns on sound and goes full screen. Browsers block sound until someone clicks the page, so the controller shows a yellow warning until this is done. Wait for the controller to say **Screen live**.
 3. **iPad 1:** scan *Show control*. **iPad 2:** scan *Soundboard*. In Safari, Share → *Add to Home Screen* opens them full screen like an app.
 4. **Phones:** scan *Live camera*, allow camera access, name the camera (e.g. "Wide shot") and tap **Go live-ready**.
-   - The laptop and the camera phones should be on the **same Wi-Fi**.
+   - With the **camera relay** set up (below), phones can be on any network: school Wi-Fi, a different Wi-Fi from the laptop, or cellular. Without it, they must share the laptop's Wi-Fi.
    - Turn off Auto-Lock on camera phones, or keep them plugged in. A locked phone stops sending video.
    - Hold phones sideways for a 16:9 picture.
 
@@ -64,6 +64,25 @@ The laptop and iPads need internet access, because button presses travel through
 
 If an iPad dies or the internet drops, use the keyboard or a presentation clicker on the audience screen:
 `→` / `Space` / `PageDown` = next, `←` / `PageUp` = back, `B` or `.` = black, `K` = play/pause video, `F` = full screen.
+
+## Camera relay (phones on different Wi-Fi, school networks)
+
+School networks usually stop devices from talking to each other directly, and often put phones and laptops on different Wi-Fi networks. A **TURN relay** fixes this. Both the phone and the laptop connect *out* to a relay server on the internet, and the server passes the video along. That works on almost any network that has internet access.
+
+Set it up once:
+
+1. Create a free TURN account. Either works:
+   - **ExpressTURN** (expressturn.com): has a large free plan. After you sign up, the dashboard shows a server address (like `turn:free.expressturn.com:3478`), a username and a password.
+   - **Metered** (metered.ca → TURN Server → create an app): copy the "credentials API URL" (`https://YOUR-APP.metered.live/api/v1/turn/credentials?apiKey=…`).
+2. On the start page (`index.html`), scroll to **Camera relay**. Paste the server address, username and password, *or* the credentials link. Click **Save and test**. You should see **Working**.
+3. On a camera phone **on the school Wi-Fi**, open the start page and tap **Test on this device**. If it says *Working*, cameras will connect from that network.
+4. Reload the screen, controller and camera pages.
+
+The relay is saved in Supabase, so every device picks it up. There's no need to edit code. When two devices *can* reach each other directly, the video still goes direct. The camera's badge shows **· relay** when the relay is in use. Relayed video is sent at a lower bitrate (2.5 Mbps), which keeps delay down and makes the free allowance last.
+
+If the test says *Not reachable* on the school Wi-Fi, the school may block the relay's port. Add a TLS address on port 443 if your provider gives one (e.g. `turns:…:443?transport=tcp`), because schools almost never block port 443. Put several addresses in the box separated by spaces. As a last resort, use a phone hotspot or a portable router for the laptop and cameras.
+
+**Data use:** each relayed camera uses about 1 GB per hour. Check your provider's free monthly allowance against your show length and number of cameras.
 
 ## Camera latency
 
@@ -89,12 +108,7 @@ The usual reasons a direct route fails:
 Fixes, quickest first:
 
 - Put every device on the **same private network**. A portable router, or a phone hotspot that the laptop and the camera phones all join, works well.
-- Or set up a **TURN relay** so the video can go through a server when a direct route is blocked:
-  1. Create a free account at metered.ca → *TURN Server* → create an app. The free plan includes 50 GB/month, enough for a few hours of cameras.
-  2. Copy the "credentials API URL". It looks like `https://YOUR-APP.metered.live/api/v1/turn/credentials?apiKey=…`.
-  3. Paste it into `ICE_SERVERS_URL` in `config.js`, then reload every page.
-
-  The direct Wi-Fi route is still used whenever it works. The relay is only the fallback. A relayed camera has slightly more delay.
+- Or set up the **camera relay** on the start page. See [Camera relay](#camera-relay-phones-on-different-wi-fi-school-networks). (Developers can also set `ICE_SERVERS_URL` / `ICE_SERVERS` in `config.js`.)
 
 ## Security note
 

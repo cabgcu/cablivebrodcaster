@@ -38,6 +38,15 @@
     background: var(--surface-2); color: var(--text); font-weight: 700; font-size: 13px; }
   .steps b { color: var(--text); font-weight: 600; }
   #warn { margin: 0 0 24px; }
+  .relay { margin-top: 24px; padding: 24px; display: grid; gap: 16px; }
+  .relay h3 { margin: 0; font-size: 16px; font-weight: 700; display: flex; align-items: center; gap: 10px; }
+  .relay p { margin: 0; color: var(--text-2); font-size: 14.5px; max-width: 720px; }
+  .relay .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+  .relay .or { font-size: 12px; font-weight: 700; letter-spacing: .08em; color: var(--text-3); text-transform: uppercase; }
+  .relay .row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+  .relay .hint { font-size: 12.5px; font-weight: 500; color: var(--text-3); }
+  #relayMsg { font-size: 14px; font-weight: 500; }
+  #relayMsg.ok { color: #9be7b4; } #relayMsg.bad { color: #ffb4b4; }
 </style>
 </head>
 <body>
@@ -61,8 +70,30 @@
       <li><span><b>iPad 1:</b> scan <b>Show control</b>. In Safari, Share → <i>Add to Home Screen</i> makes it a full-screen app.</span></li>
       <li><span><b>iPad 2:</b> scan <b>Soundboard</b>.</span></li>
       <li><span><b>Phones:</b> scan <b>Live camera</b>, allow camera access, name the camera and tap <i>Start camera</i>.</span></li>
-      <li><span>Keep the laptop and camera phones on the <b>same Wi-Fi</b>. Turn off Auto-Lock on camera phones, or plug them in. A locked phone stops its camera.</span></li>
+      <li><span>Phones can be on <b>any network</b> (school Wi-Fi, a different Wi-Fi, or cellular) once the <b>camera relay</b> below is set up. Turn off Auto-Lock on camera phones, or plug them in. A locked phone stops its camera.</span></li>
     </ol>
+  </section>
+
+  <section class="card relay" id="relay">
+    <h3>Camera relay <span id="relayState" class="pill">Checking…</span></h3>
+    <p>Without a relay, camera phones must be on the same Wi-Fi as the laptop, and school networks usually block that anyway. A relay server passes the video along, so the phones and laptop can be on <b>different Wi-Fi networks or cellular</b>. Set it up once here and every device uses it. Same-Wi-Fi video still goes direct when it can.</p>
+    <div class="grid">
+      <label class="field">Relay server address(es)
+        <input type="text" id="rUrls" placeholder="turn:free.expressturn.com:3478" autocomplete="off" autocapitalize="off" spellcheck="false">
+      </label>
+      <label class="field">Username <input type="text" id="rUser" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
+      <label class="field">Password <input type="password" id="rPass" autocomplete="new-password"></label>
+    </div>
+    <div class="or">or</div>
+    <label class="field">Credentials link (Metered and similar services)
+      <input type="url" id="rLink" placeholder="https://YOUR-APP.metered.live/api/v1/turn/credentials?apiKey=…" autocomplete="off" spellcheck="false">
+    </label>
+    <div class="row">
+      <button class="btn btn-primary" id="rSave">Save and test</button>
+      <button class="btn" id="rTest">Test on this device</button>
+      <span id="relayMsg"></span>
+    </div>
+    <div class="hint">Run <i>Test on this device</i> from a camera phone on the school Wi-Fi too. Reload camera, controller and screen pages after saving. Separate several server addresses with spaces.</div>
   </section>
 </main>
 <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js"></script>
@@ -80,10 +111,11 @@ addEventListener('error', function (e) {
 });
 </script>
 <script type="module">
-import { $, el, icon } from './common.js';
+import { $, el, icon, loadSettings, saveSettings, relayServers, testRelay } from './common.js';
 
 const base = new URL('.', location.href).href;
 function qr(text) {
+  if (typeof qrcode !== 'function') return '';
   const q = qrcode(0, 'M'); q.addData(text); q.make();
   return 'data:image/svg+xml;utf8,' + encodeURIComponent(q.createSvgTag({ cellSize: 4, margin: 0, scalable: true }));
 }
@@ -109,6 +141,36 @@ if (location.protocol !== 'https:' && !['localhost', '127.0.0.1'].includes(locat
   $('#warn').classList.add('show');
   $('#warn').querySelector('span').textContent = 'This page isn’t on https://. Phone cameras only work from a secure web address, such as GitHub Pages.';
 }
+
+// ---------- camera relay ----------
+const form = () => ({
+  urls: $('#rUrls').value.trim(), username: $('#rUser').value.trim(),
+  credential: $('#rPass').value, link: $('#rLink').value.trim(),
+});
+function relayMsg(text, cls = '') { $('#relayMsg').textContent = text; $('#relayMsg').className = cls; }
+function relayState(text, cls) { $('#relayState').textContent = text; $('#relayState').className = 'pill ' + cls; }
+async function runTest() {
+  const f = form();
+  if (!f.urls && !f.link) { relayState('Not set up', 'warn'); relayMsg(''); return; }
+  relayMsg('Testing the relay from this device…');
+  try {
+    const r = await testRelay(await relayServers(f));
+    if (r.ok) { relayState('Working', 'ok'); relayMsg(`Relay reachable from this device (${r.via}).`, 'ok'); }
+    else { relayState('Not reachable', 'bad'); relayMsg(r.reason, 'bad'); }
+  } catch (e) { relayState('Not reachable', 'bad'); relayMsg(e.message || 'Test failed.', 'bad'); }
+}
+loadSettings('relay').then((s) => {
+  $('#rUrls').value = s.urls || ''; $('#rUser').value = s.username || '';
+  $('#rPass').value = s.credential || ''; $('#rLink').value = s.link || '';
+  runTest();
+}).catch(() => relayState('Can’t load', 'bad'));
+$('#rTest').onclick = runTest;
+$('#rSave').onclick = async () => {
+  relayMsg('Saving…');
+  try { await saveSettings('relay', form()); }
+  catch (e) { relayMsg('Could not save: ' + (e.message || e), 'bad'); return; }
+  await runTest();
+};
 </script>
 </body>
 </html>

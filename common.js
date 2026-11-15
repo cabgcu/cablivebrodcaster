@@ -123,26 +123,91 @@ export async function removeFile(link, folder, name) {
 }
 
 // ---------- WebRTC ----------
-// Cameras stream directly device-to-device on the local Wi-Fi; Supabase only
-// carries the short setup messages. STUN finds a route through routers; a TURN
-// relay (config.js) is the fallback when the network blocks direct traffic.
+// Cameras stream directly device-to-device when the network allows it;
+// Supabase only carries the short setup messages. STUN finds a route through
+// routers. A TURN relay is the fallback when devices are on different Wi-Fi
+// networks, on cellular, or on a network that blocks device-to-device traffic
+// (most school networks). The relay can be set in config.js or, more easily,
+// on the start page, which saves it in Supabase for every device.
 const STUN = { urls: 'stun:stun.l.google.com:19302' };
 let rtcConfigPromise = null;
+let relayCount = 0;
+
+async function fetchIceList(url) {
+  const r = await fetch(url);
+  if (!r.ok) throw new Error(`relay link answered ${r.status}`);
+  const j = await r.json();
+  const list = Array.isArray(j) ? j : j.iceServers || [];
+  if (!list.length) throw new Error('relay link returned no servers');
+  return list;
+}
+
+// Turn the saved start-page form ({ urls, username, credential, link }) into ICE servers.
+export async function relayServers(saved = {}) {
+  const out = [];
+  const urls = String(saved.urls || '').split(/[\s,]+/).map((u) => u.trim()).filter(Boolean);
+  if (urls.length) out.push({ urls, username: saved.username || undefined, credential: saved.credential || undefined });
+  if (saved.link) out.push(...await fetchIceList(saved.link));
+  return out;
+}
+
+function within(ms, p) {
+  return Promise.race([p, new Promise((_, no) => setTimeout(() => no(new Error('timed out')), ms))]);
+}
+
 export function getRtcConfig() {
   if (!rtcConfigPromise) rtcConfigPromise = (async () => {
     let extra = [...ICE_SERVERS];
     if (ICE_SERVERS_URL) {
-      try {
-        const r = await fetch(ICE_SERVERS_URL);
-        const j = await r.json();
-        extra = extra.concat(Array.isArray(j) ? j : j.iceServers || []);
-      } catch (e) { console.warn('Could not load TURN servers', e); }
+      try { extra = extra.concat(await fetchIceList(ICE_SERVERS_URL)); }
+      catch (e) { console.warn('Could not load TURN servers from config.js', e); }
     }
+    try { extra = extra.concat(await within(5000, loadSettings('relay').then(relayServers))); }
+    catch (e) { console.warn('Could not load the camera relay saved on the start page', e); }
+    relayCount = extra.length;
     return { iceServers: [STUN, ...extra], bundlePolicy: 'max-bundle' };
   })();
   return rtcConfigPromise;
 }
-export const hasRelay = () => ICE_SERVERS.length > 0 || !!ICE_SERVERS_URL;
+export const hasRelay = () => relayCount > 0;
+
+// Check that a relay is reachable from THIS device on THIS network: ask the
+// browser for relay-only candidates and see if any come back.
+export async function testRelay(iceServers, ms = 8000) {
+  if (!iceServers.length) return { ok: false, reason: 'No relay is set up.' };
+  const pc = new RTCPeerConnection({ iceServers, iceTransportPolicy: 'relay' });
+  const found = new Set();
+  try {
+    pc.createDataChannel('test');
+    const done = new Promise((res) => {
+      pc.onicecandidate = (e) => {
+        if (!e.candidate) return res();
+        if (/ typ relay/.test(e.candidate.candidate)) found.add((e.candidate.protocol || 'udp').toUpperCase());
+      };
+      setTimeout(res, ms);
+    });
+    await pc.setLocalDescription(await pc.createOffer());
+    await done;
+  } finally { pc.close(); }
+  return found.size
+    ? { ok: true, via: [...found].join(' + ') }
+    : { ok: false, reason: 'The relay did not answer. Check the server address, username and password, or this network may block it.' };
+}
+
+// True when a connected camera's video is going through the relay.
+export async function isRelayed(pc) {
+  try {
+    const stats = await pc.getStats();
+    let pair = null;
+    stats.forEach((r) => {
+      if (r.type === 'transport' && r.selectedCandidatePairId) pair = stats.get(r.selectedCandidatePairId);
+    });
+    if (!pair) stats.forEach((r) => { if (r.type === 'candidate-pair' && r.nominated && r.state === 'succeeded') pair = r; });
+    if (!pair) return false;
+    const a = stats.get(pair.localCandidateId), b = stats.get(pair.remoteCandidateId);
+    return a?.candidateType === 'relay' || b?.candidateType === 'relay';
+  } catch { return false; }
+}
 
 // Signalling messages arrive over the network in order, but the handlers are
 // async. Run them one at a time per peer, and hold ICE candidates until the

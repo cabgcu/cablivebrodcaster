@@ -101,7 +101,7 @@ addEventListener('error', function (e) {
 });
 </script>
 <script type="module">
-import { connect, getRtcConfig, SignalQueue, addIce, setRemote, $, wakeLock } from './common.js';
+import { connect, getRtcConfig, SignalQueue, addIce, setRemote, isRelayed, $, wakeLock } from './common.js';
 
 const store = {
   get: (k, d) => { try { return localStorage.getItem(k) ?? d; } catch { return d; } },
@@ -191,13 +191,16 @@ function preferH264(pc) {
   } catch {}
 }
 
-async function tune(pc, quality) {
+// Through a relay every bit travels to a server and back, which adds delay and
+// uses up the relay's monthly allowance, so send a lighter picture.
+const RELAY_MAX_BITRATE = 2_500_000;
+async function tune(pc, quality, relayed = false) {
   for (const sender of pc.getSenders()) {
     const p = sender.getParameters();
     if (!p.encodings || !p.encodings.length) p.encodings = [{}];
     const e = p.encodings[0];
     if (quality === 'low') { e.scaleResolutionDownBy = 4; e.maxBitrate = 400_000; e.maxFramerate = 15; }
-    else { e.scaleResolutionDownBy = 1; e.maxBitrate = 8_000_000; e.maxFramerate = 30; }
+    else { e.scaleResolutionDownBy = 1; e.maxBitrate = relayed ? RELAY_MAX_BITRATE : 8_000_000; e.maxFramerate = 30; }
     p.degradationPreference = 'maintain-framerate';
     try { await sender.setParameters(p); } catch (err) { console.warn('setParameters', err); }
   }
@@ -215,8 +218,15 @@ async function handleSignal(from, data) {
     for (const t of stream.getVideoTracks()) pc.addTrack(t, stream);
     preferH264(pc);
     pc.onicecandidate = (e) => e.candidate && link.send({ t: 'signal', to: from, data: { type: 'ice', candidate: e.candidate.toJSON() } });
-    pc.onconnectionstatechange = () => {
+    pc.onconnectionstatechange = async () => {
       if (['failed', 'closed'].includes(pc.connectionState)) closePc(from);
+      else if (pc.connectionState === 'connected') {
+        const e = pcs.get(from);
+        if (e?.pc === pc) {
+          e.relayed = await isRelayed(pc);
+          if (e.relayed) tune(pc, e.quality, true);
+        }
+      }
       countViewers();
     };
     const offer = await pc.createOffer();
@@ -227,7 +237,7 @@ async function handleSignal(from, data) {
     tune(pc, data.quality);
   } else if (data.type === 'answer') {
     const e = pcs.get(from);
-    if (e && e.pc.signalingState === 'have-local-offer') { await setRemote(e.pc, { type: 'answer', sdp: data.sdp }); tune(e.pc, e.quality); }
+    if (e && e.pc.signalingState === 'have-local-offer') { await setRemote(e.pc, { type: 'answer', sdp: data.sdp }); tune(e.pc, e.quality, e.relayed); }
   } else if (data.type === 'ice') {
     const e = pcs.get(from);
     if (e) await addIce(e.pc, data.candidate);
@@ -245,9 +255,12 @@ function closePc(id) {
 }
 function countViewers() {
   const all = [...pcs.values()];
-  const n = all.filter((e) => e.pc.connectionState === 'connected').length;
+  const live = all.filter((e) => e.pc.connectionState === 'connected');
+  const n = live.length;
   const trying = all.length - n;
-  $('#viewers').textContent = `${n} viewer${n === 1 ? '' : 's'}` + (trying ? ` · ${trying} connecting` : '');
+  const relayed = live.some((e) => e.relayed);
+  $('#viewers').textContent = `${n} viewer${n === 1 ? '' : 's'}` + (relayed ? ' · relay' : '') + (trying ? ` · ${trying} connecting` : '');
+  $('#viewers').title = relayed ? 'Video is going through the relay server (different Wi-Fi or a blocking network).' : '';
   $('#viewers').className = 'pill ' + (n ? 'ok' : trying ? 'warn' : '');
 }
 

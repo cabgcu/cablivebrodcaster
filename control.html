@@ -391,7 +391,7 @@ function renderCams() {
   box.querySelectorAll('.tile').forEach((t) => {
     const st = cams.states.get(t.dataset.id);
     const msg = st === 'connected' ? '' : st === 'failed'
-      ? (hasRelay() ? 'Can’t reach this camera. Check the phone is online.' : 'Network is blocking the video. See README: “Cameras show black”.')
+      ? (hasRelay() ? 'Can’t reach this camera. Check the phone is online.' : 'Network is blocking the video. Set up the camera relay on the start page.')
       : 'Connecting…';
     let o = t.querySelector('.cam-status');
     if (!msg) { o?.remove(); return; }
