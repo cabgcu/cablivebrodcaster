@@ -74,6 +74,9 @@
   .cam-meta .route { font-size: 11px; font-weight: 500; color: var(--text-3); }
   .cam-meta .route:empty { display: none; }
   .cam:has(.tile.live) .hint { color: var(--live); }
+  .cam-zoom { display: flex; align-items: center; gap: 6px; margin-top: 8px; }
+  .cam-zoom .btn { --h: 36px; flex: 1; padding: 0; }
+  .cam-zoom .zv { flex: 1.2; font-variant-numeric: tabular-nums; font-weight: 700; font-size: 13px; }
 
   /* rundown */
   .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(176px, 1fr)); gap: 18px 14px; }
@@ -282,13 +285,14 @@ function renderGrid() {
       el('div', { class: 'edit-bar' },
         el('button', { class: 'btn btn-icon', title: 'Move earlier', onclick: () => move(i, -1) }, icon('prev')),
         el('button', { class: 'btn btn-icon', title: 'Move later', onclick: () => move(i, 1) }, icon('next')),
+        el('button', { class: 'btn btn-icon', title: 'Rename', onclick: () => rename(item) }, icon('edit')),
         el('button', { class: 'btn btn-icon btn-danger', title: 'Delete', onclick: () => del(item) }, icon('trash'))));
     grid.append(el('div', { class: 'item', 'data-i': i,
       onclick: (e) => { if (!editing && !e.target.closest('.edit-bar')) link.cmd('take', { index: i }); } },
       tile,
       el('div', { class: 'item-meta' },
         el('span', { class: 'num tnum' }, String(i + 1).padStart(2, '0')),
-        el('span', { class: 'name', title: item.name }, prettyName(item.name)),
+        el('span', { class: 'name', title: item.name }, item.label),
         icon(item.type === 'video' ? 'film' : 'image'))));
   });
   render();
@@ -332,14 +336,14 @@ function render() {
   if (p.kind === 'black') lt.querySelector('.tag')?.remove();
   const kind = $('#liveKind');
   kind.replaceChildren(icon(liveItem ? (liveItem.type === 'video' ? 'film' : 'image') : p.kind === 'camera' ? 'camera' : 'black'));
-  $('#liveName').textContent = liveItem ? prettyName(liveItem.name)
+  $('#liveName').textContent = liveItem ? liveItem.label
     : p.kind === 'camera' ? (room.cameras.find((c) => c.id === p.id)?.name || 'Camera') : 'Black screen';
 
   // Up next
   const nextItem = library.show[ni];
   const isLast = p.kind === 'show' && p.index === library.show.length - 1;
   setThumb($('#nextThumb'), nextItem && !isLast ? 'n:' + nextItem.url : 'none', () => nextItem && !isLast ? mediaThumb(nextItem) : null);
-  $('#nextName').textContent = !library.show.length ? 'Nothing in rundown' : isLast ? 'End of rundown' : prettyName(nextItem.name);
+  $('#nextName').textContent = !library.show.length ? 'Nothing in rundown' : isLast ? 'End of rundown' : nextItem.label;
   $('#next').disabled = isLast || !library.show.length;
 
   // Options
@@ -386,7 +390,11 @@ function renderCams() {
       const s = camStreams.get(c.id);
       box.append(el('div', { class: 'cam', onclick: () => link.cmd('camera', { id: c.id }) },
         el('div', { class: 'tile', 'data-id': c.id }, s ? camVideo(s) : el('div', { class: 'placeholder' }, 'Connecting…')),
-        el('div', { class: 'cam-meta' }, icon('camera'), c.name, el('span', { class: 'route' }), el('span', { class: 'hint' }, 'Cut'))));
+        el('div', { class: 'cam-meta' }, icon('camera'), c.name, el('span', { class: 'route' }), el('span', { class: 'hint' }, 'Cut')),
+        el('div', { class: 'cam-zoom', 'data-id': c.id, onclick: (e) => e.stopPropagation() },
+          el('button', { class: 'btn', title: 'Zoom out', onclick: () => zoomCam(c.id, 1 / ZSTEP) }, '−'),
+          el('button', { class: 'btn zv', title: 'Back to 1×', onclick: () => zoomCam(c.id, 0) }, '1.0×'),
+          el('button', { class: 'btn', title: 'Zoom in', onclick: () => zoomCam(c.id, ZSTEP) }, '+'))));
     }
   }
   // Connection status over each camera tile (a black tile otherwise tells you nothing).
@@ -400,6 +408,14 @@ function renderCams() {
     if (!o) t.append(o = el('div', { class: 'cam-status' }));
     o.textContent = msg;
     o.classList.toggle('bad', st === 'failed');
+  });
+  // Zoom readout (what this iPad last asked for wins until the phone catches up).
+  box.querySelectorAll('.cam-zoom').forEach((z) => {
+    const c = room.cameras.find((x) => x.id === z.dataset.id);
+    if (!c) return;
+    const zoomable = c.zoomMax > c.zoomMin;
+    z.style.display = zoomable ? '' : 'none';
+    z.querySelector('.zv').textContent = camZoom(c).toFixed(1) + '×';
   });
   // Which route each camera uses: direct (lowest delay) or through Supabase.
   box.querySelectorAll('.cam').forEach((c) => {
@@ -416,6 +432,23 @@ function renderCams() {
     if (live) t.append(el('span', { class: 'tag live' }, 'LIVE'));
     t.parentElement.querySelector('.hint').textContent = live ? 'On air' : 'Cut';
   });
+}
+
+// ---------- camera zoom ----------
+const ZSTEP = 1.25;
+const zoomAsked = new Map(); // cameraId -> { value, at }
+function camZoom(c) {
+  const a = zoomAsked.get(c.id);
+  return a && Date.now() - a.at < 2000 ? a.value : c.zoom;
+}
+function zoomCam(id, factor) {
+  const c = room.cameras.find((x) => x.id === id);
+  if (!c) return;
+  const value = factor === 0 ? c.zoomMin
+    : Math.min(c.zoomMax, Math.max(c.zoomMin, Math.round(camZoom(c) * factor * 10) / 10));
+  zoomAsked.set(id, { value, at: Date.now() });
+  link.send({ t: 'zoom', to: id, value });
+  renderCams();
 }
 
 let seeking = false;
@@ -476,8 +509,19 @@ async function move(i, d) {
   renderGrid();
   await updateSettings(link, (s) => { s.order = names; });
 }
+async function rename(item) {
+  const name = prompt('New name', item.label);
+  if (name == null) return;
+  const clean = name.trim();
+  item.label = clean || prettyName(item.name);
+  renderGrid();
+  await updateSettings(link, (st) => {
+    st.titles ||= {};
+    if (clean && clean !== prettyName(item.name)) st.titles[item.name] = clean; else delete st.titles[item.name];
+  });
+}
 async function del(item) {
-  if (!confirm(`Delete “${prettyName(item.name)}” from the show?`)) return;
+  if (!confirm(`Delete “${item.label}” from the show?`)) return;
   await removeFile(link, 'show', item.name);
   refreshLibrary();
 }

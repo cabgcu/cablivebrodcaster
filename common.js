@@ -49,7 +49,8 @@ export function connect(role, { meta = {}, onMessage = () => {}, onStatus = () =
 export function summarize(peers) {
   const screens = peers.filter((p) => p.role === 'screen');
   return {
-    cameras: peers.filter((p) => p.role === 'camera').map((p) => ({ id: p.id, name: p.name || 'Camera' }))
+    cameras: peers.filter((p) => p.role === 'camera').map((p) => ({ id: p.id, name: p.name || 'Camera',
+      zoom: p.zoom ?? 1, zoomMin: p.zoomMin ?? 1, zoomMax: p.zoomMax ?? 1 }))
       .sort((a, b) => a.name.localeCompare(b.name)),
     screens: screens.length,
     screenReady: screens.some((s) => s.ready),
@@ -73,16 +74,17 @@ export async function loadLibrary() {
   ]);
   const order = settings.order || [];
   const pads = settings.pads || {};
+  const titles = settings.titles || {}; // display names set with Rename (the stored file keeps its name)
   const files = show.filter((f) => ['image', 'video'].includes(kindOf(f.name))).sort((a, b) => natural(a.name, b.name));
   const byName = new Map(files.map((f) => [f.name, f]));
   const ordered = order.filter((n) => byName.has(n)).map((n) => byName.get(n));
   for (const f of files) if (!ordered.includes(f)) ordered.push(f);
   return {
     settings,
-    show: ordered.map((f) => ({ name: f.name, type: kindOf(f.name), url: f.url })),
+    show: ordered.map((f) => ({ name: f.name, type: kindOf(f.name), url: f.url, label: titles[f.name] || prettyName(f.name) })),
     sounds: sounds.filter((f) => kindOf(f.name) === 'audio').sort((a, b) => natural(a.name, b.name)).map((f) => ({
       name: f.name, url: f.url,
-      label: prettyName(f.name),
+      label: pads[f.name]?.label || prettyName(f.name),
       vol: pads[f.name]?.vol ?? 1, loop: pads[f.name]?.loop ?? false, color: pads[f.name]?.color ?? null,
     })),
   };
