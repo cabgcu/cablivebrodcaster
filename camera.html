@@ -60,7 +60,7 @@
     <span id="conn" class="pill keep">Not joined</span>
   </div>
   <div class="overlay bottom">
-    <span class="hint">Hold sideways · keep this page open</span>
+    <span class="hint">Hold sideways · keep this page open · any Wi-Fi or cellular</span>
     <span class="spacer"></span>
     <button class="btn glass" id="flip" title="Switch lens"><i data-icon="flip"></i></button>
     <button class="btn glass" id="settings" title="Camera settings"><i data-icon="sliders"></i></button>
@@ -82,7 +82,7 @@
       </label>
     </div>
     <button class="btn btn-lg btn-primary" id="go"><i data-icon="camera"></i>Start camera</button>
-    <div class="muted" style="font-size:12.5px">720p is best for most Wi-Fi. Use 540p if the picture stutters.</div>
+    <div class="muted" style="font-size:12.5px">Works on any Wi-Fi or cellular. 720p is best for most networks. Use 540p if the picture stutters.</div>
     <div id="err"></div>
   </div>
 </div>
@@ -101,7 +101,7 @@ addEventListener('error', function (e) {
 });
 </script>
 <script type="module">
-import { connect, getRtcConfig, SignalQueue, addIce, setRemote, $, wakeLock } from './common.js';
+import { connect, getRtcConfig, openFeed, SignalQueue, addIce, setRemote, $, wakeLock } from './common.js';
 
 const store = {
   get: (k, d) => { try { return localStorage.getItem(k) ?? d; } catch { return d; } },
@@ -161,7 +161,7 @@ async function start() {
         if (up) link.send({ t: 'getstate' });
       },
       onMessage,
-      onPeerLeft: closePc,
+      onPeerLeft: (id) => { closePc(id); if (frameViewers.delete(id)) countViewers(); },
     });
     wakeLock();
   } else {
@@ -233,7 +233,64 @@ async function handleSignal(from, data) {
     if (e) await addIce(e.pc, data.candidate);
   } else if (data.type === 'bye') {
     closePc(from);
+  } else if (data.type === 'frames') {
+    wantFrames(from, data.quality);
+  } else if (data.type === 'noframes') {
+    if (frameViewers.delete(from)) countViewers();
   }
+}
+
+// ---------- frames over Supabase ----------
+// Used by viewers that can't reach this phone directly (different Wi-Fi,
+// cellular, isolated networks). The phone encodes JPEG frames and sends them
+// on its own Supabase channel.
+const frameViewers = new Map(); // viewerId -> { quality, at }
+// The audience screen gets a sharp picture; the controller only needs a
+// small preview, on its own channel, so it never downloads the big frames.
+const PROFILES = {
+  high: { long: 854, fps: 10, maxQ: 0.65 },
+  low: { long: 320, fps: 4, maxQ: 0.55 },
+};
+const MAX_FRAME = 170_000; // characters; Supabase's free plan caps a message at 256 KB
+const senders = {}; // quality -> { feed, timer, q, canvas, ctx }
+
+function wantFrames(from, quality) {
+  quality = quality === 'low' ? 'low' : 'high';
+  const isNew = !frameViewers.has(from);
+  frameViewers.set(from, { quality, at: Date.now() });
+  if (isNew) countViewers();
+  let snd = senders[quality];
+  if (!snd) {
+    const canvas = document.createElement('canvas');
+    snd = senders[quality] = { feed: openFeed(link.id + ':' + quality), timer: null, q: PROFILES[quality].maxQ, canvas, ctx: canvas.getContext('2d') };
+  }
+  if (!snd.timer) snd.timer = setTimeout(() => sendFrame(quality), 0);
+}
+
+function sendFrame(quality) {
+  const snd = senders[quality];
+  snd.timer = null;
+  const now = Date.now();
+  let changed = false;
+  for (const [id, v] of frameViewers) if (now - v.at > 10000) { frameViewers.delete(id); changed = true; }
+  if (changed) countViewers();
+  if (![...frameViewers.values()].some((v) => v.quality === quality)) return;
+  const P = PROFILES[quality];
+  const vid = $('#preview');
+  const { feed, canvas, ctx } = snd;
+  if (stream && vid.videoWidth && document.visibilityState === 'visible' && feed.ready() && feed.backlog() < 300_000) {
+    const scale = Math.min(1, P.long / Math.max(vid.videoWidth, vid.videoHeight));
+    const w = Math.round(vid.videoWidth * scale / 2) * 2;
+    const h = Math.round(vid.videoHeight * scale / 2) * 2;
+    if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
+    ctx.drawImage(vid, 0, 0, w, h);
+    const img = canvas.toDataURL('image/jpeg', snd.q);
+    // Keep frames small enough to send: adjust quality to the picture.
+    if (img.length > MAX_FRAME * 0.6) snd.q = Math.max(0.3, snd.q - 0.05);
+    else if (img.length < MAX_FRAME * 0.3) snd.q = Math.min(P.maxQ, snd.q + 0.02);
+    if (img.length <= MAX_FRAME) feed.send({ img, w, h });
+  }
+  snd.timer = setTimeout(() => sendFrame(quality), 1000 / P.fps);
 }
 
 function closePc(id) {
@@ -244,11 +301,11 @@ function closePc(id) {
   countViewers();
 }
 function countViewers() {
-  const all = [...pcs.values()];
-  const n = all.filter((e) => e.pc.connectionState === 'connected').length;
-  const trying = all.length - n;
-  $('#viewers').textContent = `${n} viewer${n === 1 ? '' : 's'}` + (trying ? ` · ${trying} connecting` : '');
-  $('#viewers').className = 'pill ' + (n ? 'ok' : trying ? 'warn' : '');
+  const direct = new Set([...pcs].filter(([, e]) => e.pc.connectionState === 'connected').map(([id]) => id));
+  const relayed = [...frameViewers.keys()].filter((id) => !direct.has(id)).length;
+  const n = direct.size + relayed;
+  $('#viewers').textContent = `${n} viewer${n === 1 ? '' : 's'}` + (relayed ? ` · ${relayed} via Supabase` : '');
+  $('#viewers').className = 'pill ' + (n ? 'ok' : '');
 }
 
 $('#go').onclick = start;

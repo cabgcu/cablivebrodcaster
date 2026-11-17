@@ -1,5 +1,6 @@
 // All Supabase access lives here: Realtime (commands, presence, camera
-// signalling), Storage (media files) and one small settings table.
+// signalling and relayed camera frames), Storage (media files) and one small
+// settings table.
 import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.3/+esm';
 import { SUPABASE_URL, SUPABASE_KEY, BUCKET, ROOM } from './config.js';
 
@@ -91,6 +92,65 @@ export function openRoom({ id, meta, onMessage, onPeers, onStatus }) {
         : ch.send({ type: 'broadcast', event: 'm', payload: msg });
     },
     track: (m) => { current = m; return joined ? ch.track(m) : Promise.resolve('queued'); },
+  };
+}
+
+// ---------- camera feed (video frames over Supabase) ----------
+// When a phone and the laptop can't reach each other directly (different
+// Wi-Fi, cellular, networks that isolate devices), the camera sends JPEG
+// frames on its own channel instead. One channel per camera keeps the frames
+// away from the show channel, so other devices never download them.
+const closing = new Map(); // topic -> promise that resolves once the old channel is gone
+
+export function openFeed(name, { onMessage = () => {} } = {}) {
+  const topic = `feed:${ROOM}:${name}`;
+  let ch = null;
+  let joined = false;
+  let closed = false;
+  let attempt = 0;
+  let timer = null;
+
+  const remove = (c) => {
+    const p = sb.removeChannel(c).catch(() => {}).then(() => {
+      if (sb.getChannels().includes(c)) { try { c.teardown(); sb.realtime._remove(c); } catch {} }
+    });
+    closing.set(topic, p);
+    return p;
+  };
+
+  async function join() {
+    clearTimeout(timer);
+    if (closed) return;
+    const old = ch;
+    ch = null;
+    joined = false;
+    if (old) await remove(old);
+    await closing.get(topic);
+    if (closed || ch) return;
+    const mine = sb.channel(topic, { config: { broadcast: { self: false, ack: false } } });
+    ch = mine;
+    mine.on('broadcast', { event: 'f' }, ({ payload }) => onMessage(payload));
+    mine.subscribe((status) => {
+      if (mine !== ch || closed) return;
+      if (status === 'SUBSCRIBED') { joined = true; attempt = 0; return; }
+      joined = false;
+      timer = setTimeout(join, Math.min(15000, 1000 * 2 ** attempt++));
+    });
+  }
+  join();
+  addEventListener('online', () => { if (!joined && !closed) { attempt = 0; join(); } });
+
+  return {
+    ready: () => joined,
+    send: (payload) => { if (joined) ch.send({ type: 'broadcast', event: 'f', payload }); },
+    // Bytes waiting to go out on the socket: skip frames instead of queueing lag.
+    backlog: () => sb.realtime?.conn?.bufferedAmount || 0,
+    close() {
+      closed = true;
+      joined = false;
+      clearTimeout(timer);
+      if (ch) { remove(ch); ch = null; }
+    },
   };
 }
 
