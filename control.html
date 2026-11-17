@@ -71,6 +71,8 @@
   .cam-meta { display: flex; align-items: center; gap: 8px; margin-top: 8px; font-size: 14px; font-weight: 600; }
   .cam-meta svg { color: var(--text-3); }
   .cam-meta .hint { margin-left: auto; font-size: 12px; color: var(--text-3); font-weight: 500; }
+  .cam-meta .route { font-size: 11px; font-weight: 500; color: var(--text-3); }
+  .cam-meta .route:empty { display: none; }
   .cam:has(.tile.live) .hint { color: var(--live); }
 
   /* rundown */
@@ -203,7 +205,7 @@ addEventListener('error', function (e) {
 });
 </script>
 <script type="module">
-import { connect, CameraViewer, hasRelay, summarize, loadLibrary, updateSettings, uploadFiles, removeFile, DEFAULT_STATE,
+import { connect, CameraViewer, summarize, loadLibrary, updateSettings, uploadFiles, removeFile, DEFAULT_STATE,
   $, el, icon, fmtTime, setRange, wakeLock, prettyName } from './common.js';
 
 let library = { show: [], sounds: [] };
@@ -322,7 +324,7 @@ function render() {
   const lt = $('#liveThumb');
   const liveItem = p.kind === 'show' ? library.show[p.index] : null;
   const camStream = p.kind === 'camera' ? camStreams.get(p.id) : null;
-  const liveKey = liveItem ? 'show:' + liveItem.url : p.kind === 'camera' ? 'cam:' + p.id + ':' + !!camStream : 'black';
+  const liveKey = liveItem ? 'show:' + liveItem.url : p.kind === 'camera' ? 'cam:' + p.id + ':' + (camStream?.id || '') : 'black';
   setThumb(lt, liveKey, () => liveItem ? mediaThumb(liveItem) : camStream ? camVideo(camStream)
     : el('div', { class: 'placeholder' }, p.kind === 'camera' ? 'Connecting camera…' : 'Black'));
   lt.classList.toggle('is-black', p.kind === 'black');
@@ -371,7 +373,7 @@ function render() {
 function renderCams() {
   const box = $('#cams');
   $('#camCount').textContent = room.cameras.length;
-  const ids = room.cameras.map((c) => c.id + c.name).join() + [...camStreams.keys()].join();
+  const ids = room.cameras.map((c) => c.id + c.name).join() + [...camStreams].map(([k, s]) => k + s.id).join();
   if (box.dataset.ids !== ids) {
     box.dataset.ids = ids;
     box.replaceChildren();
@@ -384,20 +386,27 @@ function renderCams() {
       const s = camStreams.get(c.id);
       box.append(el('div', { class: 'cam', onclick: () => link.cmd('camera', { id: c.id }) },
         el('div', { class: 'tile', 'data-id': c.id }, s ? camVideo(s) : el('div', { class: 'placeholder' }, 'Connecting…')),
-        el('div', { class: 'cam-meta' }, icon('camera'), c.name, el('span', { class: 'hint' }, 'Cut'))));
+        el('div', { class: 'cam-meta' }, icon('camera'), c.name, el('span', { class: 'route' }), el('span', { class: 'hint' }, 'Cut'))));
     }
   }
   // Connection status over each camera tile (a black tile otherwise tells you nothing).
   box.querySelectorAll('.tile').forEach((t) => {
     const st = cams.states.get(t.dataset.id);
-    const msg = st === 'connected' ? '' : st === 'failed'
-      ? (hasRelay() ? 'Can’t reach this camera. Check the phone is online.' : 'Network is blocking the video. See README: “Cameras show black”.')
+    const msg = st === 'direct' || st === 'relay' ? '' : st === 'failed'
+      ? 'No video from this phone. Check it has internet and the camera page is open and unlocked.'
       : 'Connecting…';
     let o = t.querySelector('.cam-status');
     if (!msg) { o?.remove(); return; }
     if (!o) t.append(o = el('div', { class: 'cam-status' }));
     o.textContent = msg;
     o.classList.toggle('bad', st === 'failed');
+  });
+  // Which route each camera uses: direct (lowest delay) or through Supabase.
+  box.querySelectorAll('.cam').forEach((c) => {
+    const st = cams.states.get(c.querySelector('.tile').dataset.id);
+    const r = c.querySelector('.route');
+    r.textContent = st === 'relay' ? 'via Supabase' : st === 'direct' ? 'direct' : '';
+    r.title = st === 'relay' ? 'This phone can’t reach the network directly, so its video goes through Supabase (a little more delay).' : '';
   });
   const p = S().program;
   box.querySelectorAll('.tile').forEach((t) => {

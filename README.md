@@ -14,7 +14,11 @@ A browser-based show control system for the Canyon Night live talk show. There i
 
 - **Supabase Realtime** (Broadcast + Presence) carries the iPads' button presses to the laptop and keeps track of which devices are online. It also carries the short setup messages that connect each camera.
 - **Supabase Storage** (bucket `canyon-media`) holds the slides, videos and sounds. When the audience screen opens, it **downloads every slide and video into the laptop's memory**. Playback then never waits on the internet. The controller shows *Screen loading media 3/7* until the download finishes.
-- **Camera video does not go through Supabase.** It travels phone → laptop directly over your Wi-Fi (WebRTC). Cameras connect as soon as they join and keep playing in the background. A cut is therefore instant.
+- **Camera video takes one of two routes, with no extra server:**
+  - **Direct** (WebRTC, peer to peer): phone → laptop. Lowest delay. Always works on the same Wi-Fi and often across different networks.
+  - **Through Supabase**: when the direct route is blocked (different Wi-Fi, cellular, campus or guest networks), the phone sends JPEG frames over a Supabase Realtime channel. This works on any network with internet.
+
+  Every viewer tries both at once and switches to direct the moment it connects, so a picture shows up within a second or two either way. While on the Supabase route it retries direct every minute. Cameras keep playing in the background, so a cut is instant.
 - The audience screen holds the show state, meaning what's live. It saves that state to Supabase, so a reload comes back on the same slide.
 
 ## One-time setup
@@ -46,7 +50,7 @@ Netlify, Vercel and Cloudflare Pages also work. Upload or connect the folder; th
 2. **Audience screen:** click *Open*, drag the Chrome window onto the projector, then **click once**. That one click turns on sound and goes full screen. Browsers block sound until someone clicks the page, so the controller shows a yellow warning until this is done. Wait for the controller to say **Screen live**.
 3. **iPad 1:** scan *Show control*. **iPad 2:** scan *Soundboard*. In Safari, Share → *Add to Home Screen* opens them full screen like an app.
 4. **Phones:** scan *Live camera*, allow camera access, name the camera (e.g. "Wide shot") and tap **Go live-ready**.
-   - The laptop and the camera phones should be on the **same Wi-Fi**.
+   - Phones can be on **any Wi-Fi or cellular**. The same Wi-Fi as the laptop gives the lowest delay.
    - Turn off Auto-Lock on camera phones, or keep them plugged in. A locked phone stops sending video.
    - Hold phones sideways for a 16:9 picture.
 
@@ -67,34 +71,30 @@ If an iPad dies or the internet drops, use the keyboard or a presentation clicke
 
 ## Camera latency
 
-The camera-to-screen delay is typically about 0.1–0.3 s on good Wi-Fi. That is roughly the delay of a wireless video transmitter, but it is not literally zero. Cutting between cameras is instant, because every feed is already playing in the background.
+Each camera tile on the controller says which route it is using: **direct** or **via Supabase**.
 
-To keep camera delay low:
-- Use a good 5 GHz Wi-Fi router dedicated to the show. Busy venue or guest Wi-Fi is the most common cause of lag. Some guest networks also block device-to-device traffic entirely.
+- **Direct:** typically about 0.1–0.3 s of delay, full frame rate. That is roughly a wireless video transmitter.
+- **Via Supabase:** typically about 0.3–0.8 s, at about 10 frames per second, 854×480. Fine for a talking head; fast motion looks choppier. The controller gets a smaller preview.
+
+Cutting between cameras is instant either way, because every feed is already playing in the background.
+
+To get the direct route (and the lowest delay):
+- Put the laptop and the camera phones on the same Wi-Fi, ideally a 5 GHz router dedicated to the show. School, hotel, venue and guest networks often block device-to-device traffic. Then the cameras fall back to Supabase automatically.
+- Turn off VPNs and iCloud Private Relay.
 - Choose 720p on the phone. Use 1080p only on a strong network.
+
+## Supabase usage for cameras
+
+Cameras on the Supabase route count toward your project's Realtime usage. Direct cameras use almost nothing (a few setup messages).
+
+As a rough guide, **one camera on the Supabase route uses about 75,000 messages and 1–2 GB of transfer per hour** (audience screen plus controller preview). Check your plan's limits under *Usage* in the Supabase dashboard. The free plan's monthly allowance covers a few camera-hours. For regular shows with several cameras on the Supabase route, use the Pro plan or get the cameras onto the direct route.
 
 ## Cameras show black
 
-Each camera tile on the controller now says what is happening:
+Each camera tile on the controller says what is happening:
 
-- **Connecting…**: the phone and laptop are still finding each other. This normally takes 1–3 seconds.
-- **Network is blocking the video**: they could not find a direct route. The phone's badge stays on *0 viewers · N connecting*.
-
-The usual reasons a direct route fails:
-
-1. **The Wi-Fi isolates devices.** School, campus, hotel, venue and "guest" networks often block devices from talking to each other.
-2. **A phone is on cellular** and not on the same Wi-Fi as the laptop.
-3. A VPN or "Private Relay" is turned on on the phone or laptop.
-
-Fixes, quickest first:
-
-- Put every device on the **same private network**. A portable router, or a phone hotspot that the laptop and the camera phones all join, works well.
-- Or set up a **TURN relay** so the video can go through a server when a direct route is blocked:
-  1. Create a free account at metered.ca → *TURN Server* → create an app. The free plan includes 50 GB/month, enough for a few hours of cameras.
-  2. Copy the "credentials API URL". It looks like `https://YOUR-APP.metered.live/api/v1/turn/credentials?apiKey=…`.
-  3. Paste it into `ICE_SERVERS_URL` in `config.js`, then reload every page.
-
-  The direct Wi-Fi route is still used whenever it works. The relay is only the fallback. A relayed camera has slightly more delay.
+- **Connecting…**: normally clears within 1–3 seconds.
+- **No video from this phone**: neither route is getting frames. Check that the phone has internet, the camera page is open, and the phone isn't locked. On the phone, the badge at the top shows how many viewers it has and how many get it *via Supabase*.
 
 ## Security note
 
