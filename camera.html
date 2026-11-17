@@ -14,7 +14,7 @@
 <style>
   html, body { height: 100%; overflow: hidden; background: #000; }
   body { padding: 0; }
-  #view { position: fixed; inset: 0; background: #000; }
+  #view { position: fixed; inset: 0; background: #000; overflow: hidden; touch-action: none; }
   #view video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
   #view::after { content: ""; position: absolute; inset: 0; pointer-events: none; border: 0 solid var(--live);
     transition: border-width .15s; z-index: 3; }
@@ -35,6 +35,12 @@
   .glass { --h: 52px; width: 52px; border-radius: 50%; background: rgba(255,255,255,.14); border: 0; color: #fff;
     backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); }
   .glass svg { width: 22px; height: 22px; }
+  .zoom { display: flex; align-items: center; gap: 10px; flex: 1; max-width: 360px; height: 52px; padding: 0 6px 0 16px; border-radius: 99px;
+    background: rgba(255,255,255,.14); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); }
+  .zoom input { flex: 1; min-width: 0; }
+  .zoom button { height: 40px; min-width: 56px; border-radius: 99px; border: 0; background: rgba(0,0,0,.35); color: #fff;
+    font: 700 14px/1 inherit; font-variant-numeric: tabular-nums; cursor: pointer; }
+  @media (max-width: 640px) { .overlay.bottom .hint { display: none; } }
   .hint { font-size: 12.5px; font-weight: 500; color: rgba(255,255,255,.7); }
 
   #setup { position: fixed; inset: 0; z-index: 10; display: grid; place-items: center; padding: 20px;
@@ -62,6 +68,10 @@
   <div class="overlay bottom">
     <span class="hint">Hold sideways · keep this page open · any Wi-Fi or cellular</span>
     <span class="spacer"></span>
+    <div class="zoom" title="Zoom (or pinch the picture)">
+      <input type="range" id="zoom" min="1" max="4" step="0.05" value="1" aria-label="Zoom">
+      <button id="zoomVal" title="Back to 1×">1.0×</button>
+    </div>
     <button class="btn glass" id="flip" title="Switch lens"><i data-icon="flip"></i></button>
     <button class="btn glass" id="settings" title="Camera settings"><i data-icon="sliders"></i></button>
   </div>
@@ -144,17 +154,16 @@ async function start() {
     return;
   }
   $('#preview').srcObject = stream;
-  $('#preview').style.transform = $('#facing').value === 'user' ? 'scaleX(-1)' : '';
+  detectZoom();
   store.set('camName', $('#name').value); store.set('camFacing', $('#facing').value); store.set('camRes', $('#res').value);
   $('#setup').style.display = 'none';
   const name = $('#name').value.trim() || 'Phone camera';
   $('#camName').textContent = name;
   // Replace the track on every open connection (instant lens switch, no reconnect)
-  const track = stream.getVideoTracks()[0];
-  for (const { pc } of pcs.values()) for (const snd of pc.getSenders()) snd.replaceTrack(track);
+  await setZoom(zoom);
   if (!link) {
     link = connect('camera', {
-      meta: { name },
+      meta: { name, ...zoomMeta() },
       onStatus: (up, reason) => {
     $('#conn').title = up ? '' : reason;
         $('#conn').className = 'pill keep ' + (up ? 'ok' : 'bad'); $('#conn').textContent = up ? 'Online' : 'Reconnecting…';
@@ -172,7 +181,101 @@ async function start() {
 function onMessage(m) {
   if (m.t === 'state') updateTally(m.state);
   else if (m.t === 'signal') onSignal(m.from, m.data);
+  else if (m.t === 'zoom') setZoom(Number(m.value));
 }
+
+// ---------- zoom ----------
+// Uses the phone's own camera zoom when the browser offers it (sharpest).
+// Otherwise crops the picture (digital zoom): the cropped video is what
+// viewers receive, both directly and through Supabase.
+const DIGITAL_MAX = 4;
+let zoom = 1;
+let hwZoom = null; // { min, max } when the camera supports zoom itself
+const zc = document.createElement('canvas');
+const zctx = zc.getContext('2d');
+let zTrack = null;
+let looping = false;
+
+function detectZoom() {
+  const c = stream.getVideoTracks()[0].getCapabilities?.();
+  hwZoom = c?.zoom && c.zoom.max > c.zoom.min ? { min: c.zoom.min, max: Math.min(c.zoom.max, 10) } : null;
+  const r = zoomRange();
+  $('#zoom').min = r.min; $('#zoom').max = r.max;
+}
+const zoomRange = () => hwZoom || { min: 1, max: DIGITAL_MAX };
+const digital = () => !hwZoom && zoom > 1.01;
+const zoomMeta = () => ({ zoom: Math.round(zoom * 10) / 10, zoomMin: zoomRange().min, zoomMax: zoomRange().max });
+
+// The part of the camera picture currently in view.
+function cropRect(v) {
+  const z = digital() ? zoom : 1;
+  const sw = v.videoWidth / z, sh = v.videoHeight / z;
+  return [(v.videoWidth - sw) / 2, (v.videoHeight - sh) / 2, sw, sh];
+}
+
+// Digital zoom: redraw the cropped picture onto a canvas and send that.
+function zoomLoop() {
+  if (!digital() || !stream) { looping = false; return; }
+  looping = true;
+  const v = $('#preview');
+  if (v.videoWidth) {
+    if (zc.width !== v.videoWidth || zc.height !== v.videoHeight) { zc.width = v.videoWidth; zc.height = v.videoHeight; }
+    zctx.drawImage(v, ...cropRect(v), 0, 0, zc.width, zc.height);
+  }
+  if (v.requestVideoFrameCallback) v.requestVideoFrameCallback(zoomLoop); else setTimeout(zoomLoop, 33);
+}
+function outTrack() {
+  if (!digital()) return stream.getVideoTracks()[0];
+  if (!zTrack || zTrack.readyState === 'ended') {
+    zTrack = zc.captureStream(30).getVideoTracks()[0];
+    try { zTrack.contentHint = 'motion'; } catch {}
+  }
+  return zTrack;
+}
+
+let applying = null;
+let wanted = null;
+async function setZoom(v) {
+  if (!stream || !isFinite(v)) return;
+  const r = zoomRange();
+  zoom = Math.min(r.max, Math.max(r.min, v));
+  renderZoom();
+  if (hwZoom) {
+    // Apply the newest value once the previous one has finished (pinch sends many).
+    wanted = zoom;
+    if (!applying) {
+      applying = (async () => {
+        while (wanted != null) {
+          const z = wanted; wanted = null;
+          try { await stream.getVideoTracks()[0].applyConstraints({ advanced: [{ zoom: z }] }); } catch (e) { console.warn('zoom', e); }
+        }
+        applying = null;
+      })();
+    }
+  }
+  if (digital() && !looping) zoomLoop();
+  // Switch what the connections send between the raw camera and the cropped canvas.
+  const track = outTrack();
+  for (const { pc } of pcs.values()) for (const snd of pc.getSenders()) if (snd.track !== track) snd.replaceTrack(track).catch(() => {});
+  if (link) { clearTimeout(setZoom.t); setZoom.t = setTimeout(() => link.setMeta(zoomMeta()), 300); }
+}
+function renderZoom() {
+  const mirror = $('#facing').value === 'user' ? ' scaleX(-1)' : '';
+  $('#preview').style.transform = (digital() ? `scale(${zoom})` : '') + mirror;
+  if (document.activeElement !== $('#zoom')) $('#zoom').value = zoom;
+  $('#zoomVal').textContent = zoom.toFixed(1) + '×';
+}
+$('#zoom').addEventListener('input', (e) => setZoom(Number(e.target.value)));
+$('#zoomVal').onclick = () => setZoom(zoomRange().min);
+
+// Pinch the picture to zoom.
+let pinch = null;
+const dist = (t) => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
+$('#view').addEventListener('touchstart', (e) => { if (e.touches.length === 2) pinch = { d: dist(e.touches), z: zoom }; }, { passive: true });
+$('#view').addEventListener('touchmove', (e) => {
+  if (pinch && e.touches.length === 2) { e.preventDefault(); setZoom(pinch.z * dist(e.touches) / pinch.d); }
+}, { passive: false });
+$('#view').addEventListener('touchend', (e) => { if (e.touches.length < 2) pinch = null; });
 
 function updateTally(s) {
   const live = s.program.kind === 'camera' && s.program.id === link.id;
@@ -212,7 +315,7 @@ async function handleSignal(from, data) {
     const pc = new RTCPeerConnection(await getRtcConfig());
     pcs.set(from, { pc, quality: data.quality });
     countViewers();
-    for (const t of stream.getVideoTracks()) pc.addTrack(t, stream);
+    pc.addTrack(outTrack(), stream);
     preferH264(pc);
     pc.onicecandidate = (e) => e.candidate && link.send({ t: 'signal', to: from, data: { type: 'ice', candidate: e.candidate.toJSON() } });
     pc.onconnectionstatechange = () => {
@@ -283,7 +386,7 @@ function sendFrame(quality) {
     const w = Math.round(vid.videoWidth * scale / 2) * 2;
     const h = Math.round(vid.videoHeight * scale / 2) * 2;
     if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
-    ctx.drawImage(vid, 0, 0, w, h);
+    ctx.drawImage(vid, ...cropRect(vid), 0, 0, w, h);
     const img = canvas.toDataURL('image/jpeg', snd.q);
     // Keep frames small enough to send: adjust quality to the picture.
     if (img.length > MAX_FRAME * 0.6) snd.q = Math.max(0.3, snd.q - 0.05);

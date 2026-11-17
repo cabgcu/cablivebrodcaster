@@ -101,6 +101,7 @@
       <h3 id="sName">Sound</h3><span class="spacer"></span>
       <button class="btn btn-ghost btn-icon" value="close" title="Close"><i data-icon="x"></i></button>
     </div>
+    <label class="field">Name <input type="text" id="sLabel" autocomplete="off" enterkeyhint="done"></label>
     <div class="row"><i data-icon="volume"></i><input type="range" id="sVol" min="0" max="1.5" step="0.01"><span class="tnum" id="sVolVal"></span></div>
     <label class="switch"><input type="checkbox" id="sLoop">Loop until stopped</label>
     <div class="field">Color<div class="swatches" id="sColors"></div></div>
@@ -126,7 +127,7 @@ addEventListener('error', function (e) {
 </script>
 <script type="module">
 import { connect, summarize, loadLibrary, updateSettings, uploadFiles, removeFile, DEFAULT_STATE,
-  $, el, icon, setRange, wakeLock } from './common.js';
+  $, el, icon, setRange, wakeLock, prettyName } from './common.js';
 
 const COLORS = ['#e5484d', '#f76b15', '#d6a10b', '#30a46c', '#12a594', '#0090ff', '#3e63dd', '#8e4ec6', '#d6409f', '#52525b'];
 let library = { show: [], sounds: [] };
@@ -163,7 +164,10 @@ async function refreshLibrary() {
 
 async function setPad(name, patch) {
   const s = library.sounds.find((x) => x.name === name);
-  if (s) Object.assign(s, patch);
+  if (s) {
+    Object.assign(s, patch);
+    if ('label' in patch) s.label = patch.label || prettyName(name);
+  }
   renderPads();
   await updateSettings(link, (st) => { st.pads ||= {}; st.pads[name] = { ...(st.pads[name] || {}), ...patch }; });
 }
@@ -222,6 +226,7 @@ function renderPlaying() {
 function openSheet(s, i) {
   current = s;
   $('#sName').textContent = s.label;
+  $('#sLabel').value = s.label;
   setRange($('#sVol'), s.vol);
   $('#sVolVal').textContent = Math.round(s.vol * 100) + '%';
   $('#sLoop').checked = !!s.loop;
@@ -230,6 +235,19 @@ function openSheet(s, i) {
     onclick: (e) => { $('#sColors').querySelectorAll('button').forEach((b) => b.classList.remove('on')); e.currentTarget.classList.add('on'); setPad(s.name, { color: c }); } })));
   $('#sheet').showModal();
 }
+// Rename: saved as the pad's display name; the stored file keeps its name.
+function saveLabel() {
+  if (!current) return;
+  const v = $('#sLabel').value.trim();
+  const label = v || prettyName(current.name);
+  if (label === current.label) return;
+  $('#sName').textContent = label;
+  setPad(current.name, { label: v && v !== prettyName(current.name) ? v : null });
+  current.label = label;
+}
+$('#sLabel').addEventListener('change', saveLabel);
+$('#sLabel').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); saveLabel(); $('#sLabel').blur(); } });
+$('#sheet').addEventListener('close', saveLabel);
 $('#sVol').addEventListener('input', (e) => { $('#sVolVal').textContent = Math.round(e.target.value * 100) + '%'; });
 $('#sVol').addEventListener('change', (e) => current && setPad(current.name, { vol: Number(e.target.value) }));
 $('#sLoop').addEventListener('change', (e) => current && setPad(current.name, { loop: e.target.checked }));

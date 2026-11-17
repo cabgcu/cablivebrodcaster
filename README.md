@@ -64,6 +64,20 @@ The laptop and iPads need internet access, because button presses travel through
 - **File size:** the Supabase free plan limits each upload to **50 MB**. Compress longer videos (for example with HandBrake, 1080p) or use a paid plan.
 - The rundown follows filename order (`01-…`, `02-…`). You can change it on the controller with *Reorder / delete*.
 
+## Zooming a camera
+
+- **On the phone:** pinch the picture, or drag the zoom slider at the bottom. Tap the **1.0×** button to zoom back out.
+- **On the controller:** use **−** and **+** under each camera tile. Tap the number to go back to 1×.
+
+When the browser can control the phone's own camera zoom (most Android phones in Chrome), that zoom is used and stays sharp. Otherwise (for example iPhone Safari) the page crops the picture, up to 4×. That is a digital zoom, so the picture gets softer the further in you go. Choose 1080p on the phone if you plan to zoom in a lot.
+
+## Renaming slides, videos and sounds
+
+- **Controller:** tap *Edit*, then the pencil on a slide or video.
+- **Soundboard:** tap *Edit*, tap a pad, and change *Name*.
+
+This changes the name shown on the controller and soundboard. The file in Supabase Storage keeps its original name, so renaming never interrupts what's on screen, and pad settings and rundown order stay attached. Clear the name to go back to the file name.
+
 ## Backup controls on the laptop
 
 If an iPad dies or the internet drops, use the keyboard or a presentation clicker on the audience screen:
