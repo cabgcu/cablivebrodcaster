@@ -134,7 +134,7 @@ function command(m) {
     case 'videoOpt': for (const k of ['volume', 'loop', 'autoplay', 'autoNext']) if (k in m) state.video[k] = m[k]; break;
     case 'master': state.master = Math.max(0, Math.min(1.5, Number(m.value))); break;
     case 'video': return videoOp(m.op, m.value);
-    case 'sfx': return sfxOp(m.op, m.name);
+    case 'sfx': return sfxOp(m.op, m.name, m.value);
     default: return;
   }
   changed();
@@ -348,6 +348,7 @@ function ensureAudio() {
 }
 function loadSounds(list) {
   soundList = list;
+  applyLevels();
   if (!actx) return;
   for (const s of list) {
     if (!buffers.has(s.url)) {
@@ -356,7 +357,23 @@ function loadSounds(list) {
     }
   }
 }
-async function sfxOp(op, name) {
+// Set each playing sound to its pad's level (short ramp, no clicks).
+function applyLevels() {
+  if (!actx) return;
+  for (const [name, e] of playing) {
+    const s = soundList.find((x) => x.name === name);
+    if (!s) continue;
+    e.gain.gain.setTargetAtTime(s.vol ?? 1, actx.currentTime, 0.03);
+    e.src.loop = !!s.loop;
+  }
+}
+async function sfxOp(op, name, value) {
+  if (op === 'vol') {
+    // Live level change from the soundboard, ahead of the saved setting.
+    const s = soundList.find((x) => x.name === name);
+    if (s && isFinite(value)) { s.vol = Math.max(0, Math.min(1.5, Number(value))); applyLevels(); }
+    return;
+  }
   if (!actx || !primary) return;
   if (op === 'stopAll') { for (const n of [...playing.keys()]) stopSound(n, 0.05); return; }
   if (op === 'fadeAll') { for (const n of [...playing.keys()]) stopSound(n, 1.5); return; }
@@ -393,10 +410,6 @@ function stopSound(name, fade) {
 let lastSfx = '';
 function sendSfx() {
   if (!actx) return;
-  for (const [name, e] of playing) {
-    const s = soundList.find((x) => x.name === name);
-    if (s) { e.gain.gain.value = s.vol; e.src.loop = !!s.loop; }
-  }
   const list = [...playing].map(([name, e]) => {
     const t = actx.currentTime - e.start;
     return { name, pos: Math.round((e.src.loop ? t % e.dur : Math.min(t, e.dur)) * 10) / 10, dur: e.dur };

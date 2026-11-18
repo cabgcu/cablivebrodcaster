@@ -68,6 +68,14 @@ export const DEFAULT_STATE = {
 // ---------- media library ----------
 const natural = (a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
 
+// Files listed in `order` come first, in that order; new files follow by name.
+function orderBy(files, order = []) {
+  const byName = new Map(files.map((f) => [f.name, f]));
+  const out = order.filter((n) => byName.has(n)).map((n) => byName.get(n));
+  for (const f of files) if (!out.includes(f)) out.push(f);
+  return out;
+}
+
 export async function loadLibrary() {
   const [show, sounds, settings] = await Promise.all([
     listFolder('show'), listFolder('sounds'), loadSettings('main').catch(() => ({})),
@@ -82,7 +90,7 @@ export async function loadLibrary() {
   return {
     settings,
     show: ordered.map((f) => ({ name: f.name, type: kindOf(f.name), url: f.url, label: titles[f.name] || prettyName(f.name) })),
-    sounds: sounds.filter((f) => kindOf(f.name) === 'audio').sort((a, b) => natural(a.name, b.name)).map((f) => ({
+    sounds: orderBy(sounds.filter((f) => kindOf(f.name) === 'audio').sort((a, b) => natural(a.name, b.name)), settings.soundOrder).map((f) => ({
       name: f.name, url: f.url,
       label: pads[f.name]?.label || prettyName(f.name),
       vol: pads[f.name]?.vol ?? 1, loop: pads[f.name]?.loop ?? false, color: pads[f.name]?.color ?? null,

@@ -6,7 +6,7 @@ A browser-based show control system for the Canyon Night live talk show. There i
 |---|---|---|
 | **Laptop** → projector/TV | `screen.html` | What the audience sees. Shows slides, videos and live cameras. **All audio** (videos and sound effects) plays from the laptop. |
 | **iPad 1** | `control.html` | Next / back, tap any slide or video to put it on screen, video transport (play, pause, scrub, ±10s, volume), cut to a live camera, black screen, cut/fade. |
-| **iPad 2** | `sound.html` | Soundboard pads. Sounds play on the **laptop**, not the iPad. Includes Stop all, Fade out all, master volume, and per-pad volume, loop and color. |
+| **iPad 2** | `sound.html` | Soundboard pads. Sounds play on the **laptop**, not the iPad. Includes Stop all, Fade out all, master volume, a level slider under every pad (changes the sound live, even while it plays), reordering, and per-pad loop and color. |
 | **Phones** | `camera.html` | Turns a phone into a live camera. The controller iPad sees a preview of every camera and can cut to any of them. The phone shows a red **ON AIR** tally light while it is live. |
 | any | `index.html` | Start page with links and QR codes for every device. |
 
@@ -77,6 +77,11 @@ When the browser can control the phone's own camera zoom (most Android phones in
 - **Soundboard:** tap *Edit*, tap a pad, and change *Name*.
 
 This changes the name shown on the controller and soundboard. The file in Supabase Storage keeps its original name, so renaming never interrupts what's on screen, and pad settings and rundown order stay attached. Clear the name to go back to the file name.
+
+## Soundboard levels and order
+
+- **Level:** drag the slider under any pad. The change is heard on the laptop right away, even while the sound is playing, and is saved for next time. It goes up to 150% for quiet files. Double-tap the slider to reset to 100%.
+- **Order:** tap *Edit*, then use the ‹ › buttons under a pad to move it. The number keys 1–9 on a keyboard follow the new order.
 
 ## Backup controls on the laptop
 

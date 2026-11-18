@@ -43,6 +43,16 @@
   .pad.playing { box-shadow: 0 0 0 3px #fff, 0 0 34px -4px var(--c); filter: brightness(1.12); }
   .pad.playing .eq { display: flex; }
   .pad.playing .key { display: none; }
+  .padwrap { display: grid; gap: 8px; min-width: 0; }
+  .lvl { display: grid; grid-template-columns: auto 1fr 44px; align-items: center; gap: 10px; height: 40px; padding: 0 12px;
+    border-radius: 12px; background: var(--surface); border: 1px solid var(--border); color: var(--text-3); }
+  .lvl svg { width: 16px; height: 16px; }
+  .lvl input { min-width: 0; }
+  .lvl .val { font-size: 12.5px; font-weight: 700; color: var(--text-2); text-align: right; font-variant-numeric: tabular-nums; }
+  .lvl.hot .val { color: var(--warn, #f5a524); }
+  .movebar { display: none; gap: 6px; }
+  .editing .movebar { display: flex; }
+  .movebar .btn { --h: 38px; flex: 1; padding: 0; }
   .editing .pad::after { content: ""; position: absolute; inset: 0; border-radius: inherit; border: 2px dashed rgba(255,255,255,.5); }
   .editing .pad .top .flag { display: none; }
   .edit-chip { display: none; position: absolute; top: 10px; right: 10px; width: 30px; height: 30px; border-radius: 50%;
@@ -188,7 +198,14 @@ function renderState() {
   $('#mVal').textContent = Math.round(state.master * 100) + '%';
 }
 
-const colorFor = (s, i) => s.color || COLORS[i % (COLORS.length - 1)];
+// A pad without a chosen color gets one from its file name, so it keeps its
+// color when pads are reordered.
+const colorFor = (s) => {
+  if (s.color) return s.color;
+  let h = 0;
+  for (const ch of s.name) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  return COLORS[h % (COLORS.length - 1)];
+};
 
 function renderPads() {
   const box = $('#pads');
@@ -200,7 +217,7 @@ function renderPads() {
     return;
   }
   library.sounds.forEach((s, i) => {
-    box.append(el('button', { class: 'pad', style: `--c:${colorFor(s, i)}`, 'data-name': s.name,
+    const pad = el('button', { class: 'pad', style: `--c:${colorFor(s, i)}`, 'data-name': s.name,
       onpointerdown: (e) => { if (!editing) { e.preventDefault(); link.cmd('sfx', { op: 'toggle', name: s.name }); } },
       onclick: () => { if (editing) openSheet(s, i); } },
       el('div', { class: 'top' },
@@ -209,7 +226,21 @@ function renderPads() {
         s.loop ? el('span', { class: 'flag', title: 'Loops' }, icon('repeat')) : null),
       el('span', { class: 'edit-chip' }, icon('edit')),
       el('span', { class: 'label' }, s.label),
-      el('div', { class: 'prog' })));
+      el('div', { class: 'prog' }));
+    // Level for this sound: changes it live on the laptop, even mid-play.
+    const range = el('input', { type: 'range', min: 0, max: 1.5, step: 0.01, 'aria-label': `${s.label} level` });
+    const val = el('span', { class: 'val' });
+    const lvl = el('div', { class: 'lvl', title: 'Level for this sound' }, icon('volume'), range, val);
+    const show = (v) => { val.textContent = Math.round(v * 100) + '%'; lvl.classList.toggle('hot', v > 1); };
+    setRange(range, s.vol); show(s.vol);
+    range.addEventListener('input', () => { const v = Number(range.value); show(v); liveLevel(s.name, v); });
+    range.addEventListener('change', () => setPad(s.name, { vol: Number(range.value) }));
+    range.addEventListener('dblclick', () => { setRange(range, 1); show(1); liveLevel(s.name, 1); setPad(s.name, { vol: 1 }); });
+    const n = library.sounds.length;
+    box.append(el('div', { class: 'padwrap' }, pad, lvl,
+      el('div', { class: 'movebar' },
+        el('button', { class: 'btn', title: 'Move earlier', disabled: i === 0, onclick: () => movePad(i, -1) }, icon('prev')),
+        el('button', { class: 'btn', title: 'Move later', disabled: i === n - 1, onclick: () => movePad(i, 1) }, icon('next')))));
   });
   renderPlaying();
 }
@@ -220,6 +251,29 @@ function renderPlaying() {
     p.classList.toggle('playing', !!st);
     p.querySelector('.prog').style.width = st && st.dur ? (st.pos / st.dur) * 100 + '%' : '0';
   });
+}
+
+// Send level changes while dragging (at most every 50 ms) so you hear them.
+const levelTimers = new Map();
+function liveLevel(name, value) {
+  const s = library.sounds.find((x) => x.name === name);
+  if (s) s.vol = value;
+  if (levelTimers.has(name)) { levelTimers.get(name).value = value; return; }
+  link.cmd('sfx', { op: 'vol', name, value });
+  const t = { value };
+  levelTimers.set(name, t);
+  setTimeout(() => { levelTimers.delete(name); if (t.value !== value) link.cmd('sfx', { op: 'vol', name, value: t.value }); }, 50);
+}
+
+// ---------- reorder ----------
+async function movePad(i, dir) {
+  const j = i + dir;
+  if (j < 0 || j >= library.sounds.length) return;
+  const list = library.sounds;
+  [list[i], list[j]] = [list[j], list[i]];
+  renderPads();
+  const order = list.map((x) => x.name);
+  await updateSettings(link, (st) => { st.soundOrder = order; });
 }
 
 // ---------- pad settings sheet ----------
@@ -248,7 +302,10 @@ function saveLabel() {
 $('#sLabel').addEventListener('change', saveLabel);
 $('#sLabel').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); saveLabel(); $('#sLabel').blur(); } });
 $('#sheet').addEventListener('close', saveLabel);
-$('#sVol').addEventListener('input', (e) => { $('#sVolVal').textContent = Math.round(e.target.value * 100) + '%'; });
+$('#sVol').addEventListener('input', (e) => {
+  $('#sVolVal').textContent = Math.round(e.target.value * 100) + '%';
+  if (current) liveLevel(current.name, Number(e.target.value));
+});
 $('#sVol').addEventListener('change', (e) => current && setPad(current.name, { vol: Number(e.target.value) }));
 $('#sLoop').addEventListener('change', (e) => current && setPad(current.name, { loop: e.target.checked }));
 $('#sTest').onclick = () => current && link.cmd('sfx', { op: 'play', name: current.name });
